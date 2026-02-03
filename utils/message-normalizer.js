@@ -46,7 +46,7 @@ class MessageNormalizer {
             isGroup: isGroup,
             sender: {
                 id: from,
-                lid: rawMessage.key.remoteJid.includes('@lid') ? rawMessage.key.remoteJid : null,
+                lid: rawMessage.key.remoteJid.includes('@lid') ? rawMessage.key.remoteJid : rawMessage.key.remoteJidAlt && rawMessage.key.remoteJidAlt.includes('@lid') ? rawMessage.key.remoteJidAlt : null,
                 pushName: rawMessage.pushName || ''
             },
             type,
@@ -66,9 +66,6 @@ class MessageNormalizer {
             reaction: this._extractReaction(rawMessage.message),
             pollUpdate: await this._extractPollUpdate(rawMessage, client),
             poll: this._extractPollCreation(rawMessage),
-            getAttachments: async () => {
-                return await client.messages.getAttachments(rawMessage);
-            },
             raw: rawMessage // Referência ao objeto original para acesso avançado
         };
 
@@ -139,7 +136,7 @@ class MessageNormalizer {
                 isPtt: messageContent.ptt || false,
                 isGif: messageContent.gifPlayback || false,
                 isViewOnce: messageContent.viewOnce || false,
-                download: () => client.messages.download(rawMessage)
+                getAttachments: () => client.messages.getAttachments(rawMessage)
             };
         }
 

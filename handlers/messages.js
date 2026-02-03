@@ -174,7 +174,6 @@ class MessageHandler {
      * @param {object} [options={}] - Opções adicionais.
      */
     async sendLink(jid, url, options = {}) {
-
         return this.sendMessage(jid, { text: url }, options);
     }
 
@@ -245,7 +244,7 @@ class MessageHandler {
         return this.client.sock.readMessages([messageKey]);
     }
 
-    /** Funcional apenas usando baileys e baileys_helper - Envia uma mensagem com botões interativos. */
+    /** Deprecated - Funcional apenas usando baileys e baileys_helper - Envia uma mensagem com botões interativos. */
     async sendInteractiveMessage(jid, interactiveMessage, more) {
         const verifiedJid = await this.client.users.isOnWhatsApp(jid);
         if (verifiedJid && verifiedJid.exists) {
@@ -256,7 +255,7 @@ class MessageHandler {
         }
     }
 
-    /** Funcional apenas usando baileys e baileys_helper - Envia uma mensagem com botões interativos. */
+    /** Deprecated - Funcional apenas usando baileys e baileys_helper - Envia uma mensagem com botões interativos. */
     async sendButtons(jid, messageButton) {
         const verifiedJid = await this.client.users.isOnWhatsApp(jid);
         if (verifiedJid && verifiedJid.exists) {
@@ -270,29 +269,96 @@ class MessageHandler {
     /** Faz o download de mídia de uma mensagem. */
     async getAttachments(message) {
         this.client._validateConnection();
-        const type = Object.keys(message.message)[0];
-        const messageContent = message.message[type];
-        if (!messageContent.url)
-            return null;
 
-        const stream = await this.client.downloadContentFromMessage(messageContent, type.replace('Message', ''));
+        const type = Object.keys(message.message)[0]; // ex: imageMessage
+        const messageContent = message.message[type];
+
+        if (!messageContent?.url) return null;
+
+        // baixa o stream
+        const stream = await this.client.downloadContentFromMessage(
+            messageContent,
+            type.replace('Message', '') // imageMessage → image
+        );
+
+        // monta o buffer
         let buffer = Buffer.from([]);
         for await (const chunk of stream) {
             buffer = Buffer.concat([buffer, chunk]);
         }
+
+        const mimetype = messageContent.mimetype;
+        const extension = mimetype.split('/')[1] || 'bin';
+
+        // conversões
+        const toBase64 = () => buffer.toString('base64');
+
+        const toDataUri = () =>
+            `data:${mimetype};base64,${buffer.toString('base64')}`;
+
+        const toArrayBuffer = () =>
+            buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+
+        const toBlob = () => {
+            const arrayBuffer = toArrayBuffer();
+            return new Blob([arrayBuffer], { type: mimetype });
+        };
+
+        const toImageUrl = () => {
+            const blob = toBlob();
+            return URL.createObjectURL(blob);
+        };
+
+        const toImageBitmap = async () => {
+            const blob = toBlob();
+            return await createImageBitmap(blob);
+        };
+
+        const toStream = () => {
+            const { Readable } = require('stream');
+            return Readable.from(buffer);
+        };
+
+        const toSharp = () => {
+            const sharp = require('sharp');
+            return sharp(buffer); // o usuário pode continuar com .resize().png()...
+        };
+
+        const detectType = async () => {
+            const { fileTypeFromBuffer } = await import('file-type');
+            return await fileTypeFromBuffer(buffer);
+        };
+
+        const save = async (path) => {
+            const filename = `${message.from}-${Date.now()}.${extension}`;
+            const filepath = path
+                ? path
+                : `${this.client.sessionPath}/media/${filename}`;
+
+            await fs.writeFile(filepath, buffer);
+
+            return { filename, filepath };
+        };
+
         return {
-            type: messageContent.mimetype,
+            type: mimetype,
+            extension,
             buffer,
-            save: async (path) => {
-                const mime = message.message.imageMessage.mimetype;
-                const extension = mime.split('/')[1];
-                const filename = `${message.from}-${Date.now()}.${extension}`;
-                const filepath = path ? path : this.client.sessionPath + '/media/' + filename;
-                await fs.writeFile(filepath, buffer);
-                return { filename, filepath };
-            }
+
+            // 🔥 todas as funções utilitárias
+            toBase64,
+            toDataUri,
+            toArrayBuffer,
+            toBlob,
+            toImageUrl,
+            toImageBitmap,
+            toStream,
+            toSharp,
+            detectType,
+            save,
         };
     }
+
 }
 
 module.exports = MessageHandler;

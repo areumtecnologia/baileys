@@ -404,7 +404,7 @@ class Client extends EventEmitter {
     }
 
     // Metodos usados pelos handlers
-    async getContentType(message) {
+    getContentType(message) {
         return getContentType(message);
     }
 
