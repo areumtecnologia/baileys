@@ -46,15 +46,52 @@ class GroupHandler {
      */
     constructor(client) {
         this.client = client;
+        this.groups = new Map();
     }
 
-    /** Obtém os metadados de um grupo. */
+    /** Obtém os metadados de um grupo a partir da jid do grupo. 
+     * @param {string} groupId - O ID do grupo.
+     * @returns {Promise<Object>} Metadados do grupo. Objeto de retorno:
+     * 
+     * { id: 'string', subject: 'string', participants: [{ id: 'string', admin: boolean }], owner: 'string', creation: number, ephemeralDuration: number, settings: Object, desc: string, descId: string, descOwner: string, descTime: number, restrict: boolean, announce: boolean, memberAddMode: string, memberRemoveMode: string, ... }
+    */
     async getMetadata(groupId) {
         this.client._validateConnection();
-        return this.client.sock.groupMetadata(groupId);
+        if (!groupId.endsWith('@g.us')) {
+            return { error: new Error('Invalid group ID') };
+        }
+        if (this.groups.has(groupId)) {
+            return this.groups.get(groupId);
+        }
+        const groupMetadata = await this.client.sock.groupMetadata(groupId);
+        this.groups.set(groupId, groupMetadata);
+        return groupMetadata;
+    }
+    /** Obtém todos os grupos que o cliente participa. */
+    async getAllGroups() {
+        this.client._validateConnection();
+        const groups = await this.client.sock.groupFetchAllParticipating();
+        if (!groups) {
+            return [];
+        }
+        if (groups.error) {
+            return { error: groups.error };
+        }
+        // add groups to this.groups
+        groups.forEach((group) => {
+            this.groups.set(group.id, group);
+        });
+
+        // convert groups to array
+        return Object.values(groups);
+    }
+    /** Obtém a URL da foto de perfil de um usuário ou grupo. */
+    async getProfilePicture(jid) {
+        this.client._validateConnection();
+        return this.client.sock.profilePictureUrl(jid, 'image');
     }
 
-    /** Cria um novo grupo. */
+    /** Cria um novo grupo a partir de uma lista de jids. */
     async create(subject, participantsJids) {
         this.client._validateConnection();
         return this.client.sock.groupCreate(subject, participantsJids);

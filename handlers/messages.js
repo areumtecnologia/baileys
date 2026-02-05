@@ -17,7 +17,7 @@
  * const handler = new MessageHandler(client);
  * await handler.sendTextMessage('5511999999999@s.whatsapp.net', 'Olá!');
  */
-// const { sendButtons, sendInteractiveMessage } = require('baileys_helper');
+
 const { Utils, MessageNormalizer } = require('../utils');
 
 class MessageHandler {
@@ -34,8 +34,16 @@ class MessageHandler {
      */
     async sendMessage(jid, content, options = {}) {
         this.client._validateConnection();
-        const verifiedJid = await this.client.users.isOnWhatsApp(jid);
+        const verifiedJid = jid.endsWith('@g.us') || jid.endsWith('@broadcast') || jid.endsWith('@newsletter') ? { jid, exists: true } : await this.client.users.isOnWhatsApp(jid);
         if (verifiedJid && verifiedJid.exists) {
+            if (options.composing) {
+                this.client.sock.sendPresenceUpdate('composing', verifiedJid.jid);
+                await new Promise(r => setTimeout(() => r(true), options.composing?.timeout));
+            }
+            if (options.recording) {
+                this.client.sock.sendPresenceUpdate('recording', verifiedJid.jid);
+                await new Promise(r => setTimeout(() => r(true), options.recording?.timeout));
+            }
             const msg = await this.client.sock.sendMessage(verifiedJid.jid, content, options);
             const nmsg = await MessageNormalizer.normalize(msg, this.client);
             return nmsg;
@@ -93,17 +101,19 @@ class MessageHandler {
     async sendAudio(jid, media, ptt = true, options = {}) {
         const content = {
             audio: typeof media === 'string' ? { url: media } : media,
+            mimetype: options.mimetype || 'audio/ogg; codecs=opus',
             ptt
         };
         return this.sendMessage(jid, content, options);
     }
 
     /** Envia um documento. */
-    async sendDocument(jid, media, mimetype, fileName = 'file', options = {}) {
+    async sendDocument(jid, media, mimetype, fileName = '', caption = '', options = {}) {
         const content = {
             document: typeof media === 'string' ? { url: media } : media,
             mimetype,
-            fileName
+            fileName,
+            caption
         };
         return this.sendMessage(jid, content, options);
     }
@@ -215,55 +225,16 @@ class MessageHandler {
     //                                     MÉTODOS INTERATIVOS E OUTROS
     // =================================================================================================
     /** Envia acoes  */
-    async sendTyping(jid) {
-        try {
-            this.client._validateConnection();
-            const verifiedJid = await this.client.users.isOnWhatsApp(jid);
-            if (verifiedJid && verifiedJid.exists) {
 
-                await this.client.sock.presenceSubscribe(jid)
-                await this.client.sock.sendPresenceUpdate('available', jid)
-                await Utils.delay(500);
-
-                await this.client.sock.sendPresenceUpdate('composing', jid)
-                await Utils.delay(5000)
-
-                return await this.client.sock.sendPresenceUpdate('paused', jid)
-            }
-            else {
-                return verifiedJid;
-            }
-
-        } catch (error) {
-            throw error;
-        }
+    // Metodo para enviar notificacao "digitando"
+    composing(jid, ts) {
+        return this.client.sock.sendPresenceUpdate('composing', jid);
     }
+
     /** Marca mensagens como lidas. */
     async read(messageKey) {
         this.client._validateConnection();
         return this.client.sock.readMessages([messageKey]);
-    }
-
-    /** Deprecated - Funcional apenas usando baileys e baileys_helper - Envia uma mensagem com botões interativos. */
-    async sendInteractiveMessage(jid, interactiveMessage, more) {
-        const verifiedJid = await this.client.users.isOnWhatsApp(jid);
-        if (verifiedJid && verifiedJid.exists) {
-            return await sendInteractiveMessage(this.client.sock, verifiedJid.jid, interactiveMessage, more);
-        }
-        else {
-            return verifiedJid;
-        }
-    }
-
-    /** Deprecated - Funcional apenas usando baileys e baileys_helper - Envia uma mensagem com botões interativos. */
-    async sendButtons(jid, messageButton) {
-        const verifiedJid = await this.client.users.isOnWhatsApp(jid);
-        if (verifiedJid && verifiedJid.exists) {
-            return await sendButtons(this.client.sock, verifiedJid.jid, messageButton);
-        }
-        else {
-            return verifiedJid;
-        }
     }
 
     /** Faz o download de mídia de uma mensagem. */
@@ -341,7 +312,7 @@ class MessageHandler {
         };
 
         return {
-            type: mimetype,
+            mimetype,
             extension,
             buffer,
 
@@ -359,6 +330,10 @@ class MessageHandler {
         };
     }
 
+    /** Obtem mensagens as ultimas mensagens recebidas de acordo com a biblioteca https://github.com/Itsukichann/Baileys */
+    async getMessages(jid, limit = 10) {
+        return await this.client.getMessages(jid, limit);
+    }
 }
 
 module.exports = MessageHandler;

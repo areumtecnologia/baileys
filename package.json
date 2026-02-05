@@ -1,7 +1,7 @@
 {
   "name": "@areumtecnologia/baileys",
-  "version": "1.0.2",
-  "description": "More baileys fork",
+  "version": "1.1.18",
+  "description": "More baileys Wrapper",
   "license": "ISC",
   "author": "Áreum Tecnologia",
   "type": "commonjs",
@@ -10,8 +10,7 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "@itsukichan/baileys": "^7.3.2",
-    "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "@areumtecnologia/wasockets": "^1.0.0",
     "crypto-digest-sync": "^1.0.0",
     "node-cache": "^5.1.2",
     "qrcode": "^1.5.4",

@@ -6,11 +6,12 @@ const digestSync = require('crypto-digest-sync');
 class MessageNormalizer {
     /**
      * Ponto de entrada principal. Normaliza uma mensagem bruta do Baileys.
+     * @param {import('../handlers/contacts').default} contact - O contato.
      * @param {import('baileys').proto.WebMessageInfo} rawMessage - O objeto de mensagem bruto.
      * @param {import('../client').default} client - A instância do cliente.
      * @returns {object|null} Um objeto de mensagem normalizado ou null se não for uma mensagem válida.
      */
-    static async normalize(rawMessage, client) {
+    static async normalize(contact, rawMessage, client) {
         // if (!rawMessage || (!rawMessage.message && !rawMessage.messageStubType)) {
         if (!rawMessage || !rawMessage.message) {
             return null;
@@ -30,25 +31,19 @@ class MessageNormalizer {
         const originalType = Object.keys(rawMessage.message)[0];
         const type = this._getFriendlyType(rawMessage.message);
         const messageContent = rawMessage.message[originalType];
-        const contextInfo = messageContent?.contextInfo;
-        const chatId = rawMessage.key.remoteJid.includes('@lid') ? rawMessage.key.remoteJidAlt : rawMessage.key.remoteJid;
-        const isGroup = chatId.endsWith('@g.us');
+        const contextInfo = messageContent?.contextInfo || rawMessage.message?.messageContextInfo;
         const clientJid = client.jidNormalizedUser(client.sock.user.id);
-        const from = isGroup ? rawMessage.key.participant : rawMessage.key.fromMe ? clientJid : chatId;
-        const to = isGroup ? rawMessage.key.participant : rawMessage.key.fromMe ? chatId : clientJid;
+        const fromMe = rawMessage.key.fromMe;
+        const from = fromMe ? clientJid : contact.id;
+        const to = fromMe ? contact.id : clientJid;
+
         const normalized = {
             id: rawMessage.key.id,
-            from: from,
-            to: to,
-            chatId: chatId,
-            timestamp: new Date(Number(rawMessage.messageTimestamp) * 1000),
-            fromMe: rawMessage.key.fromMe,
-            isGroup: isGroup,
-            sender: {
-                id: from,
-                lid: rawMessage.key.remoteJid.includes('@lid') ? rawMessage.key.remoteJid : rawMessage.key.remoteJidAlt && rawMessage.key.remoteJidAlt.includes('@lid') ? rawMessage.key.remoteJidAlt : null,
-                pushName: rawMessage.pushName || ''
-            },
+            chat: contact,
+            fromMe,
+            from,
+            fromPushName: fromMe ? client.user.name : contact.name,
+            to,
             type,
             body: this._extractBody(rawMessage.message),
             hasMedia: false,
@@ -66,6 +61,7 @@ class MessageNormalizer {
             reaction: this._extractReaction(rawMessage.message),
             pollUpdate: await this._extractPollUpdate(rawMessage, client),
             poll: this._extractPollCreation(rawMessage),
+            timestamp: new Date(Number(rawMessage.messageTimestamp) * 1000),
             raw: rawMessage // Referência ao objeto original para acesso avançado
         };
 
@@ -76,7 +72,7 @@ class MessageNormalizer {
         if (normalized.isReply) {
             const quotedRaw = {
                 key: {
-                    remoteJid: chatId,
+                    remoteJid: normalized.chat.id,
                     id: contextInfo.stanzaId,
                     fromMe: client.jidNormalizedUser(contextInfo.participant) === clientJid,
                     participant: contextInfo.participant
@@ -86,29 +82,50 @@ class MessageNormalizer {
             normalized.quotedMessage = this.normalize(quotedRaw, client);
         }
 
+
         return normalized;
     }
 
-    /** 
-     * @private Retorna um tipo amigável baseado no conteúdo da mensagem. 
-     */
+    /** @private Retorna um tipo amigável baseado no conteúdo da mensagem. */
     static _getFriendlyType(message) {
         if (!message) return 'unknown'
 
-        if (message.conversation || message.extendedTextMessage) return 'text'
-        if (message.imageMessage) return 'image'
-        if (message.videoMessage) return 'video'
-        if (message.audioMessage) return 'audio'
-        if (message.documentMessage) return 'document'
-        if (message.stickerMessage) return 'sticker'
-        if (message.locationMessage) return 'location'
-        if (message.contactMessage || message.contactsArrayMessage) return 'contact'
-        if (message.buttonsResponseMessage || message.listResponseMessage) return 'interactive_reply'
-        if (message.reactionMessage) return 'reaction'
-        if (message.pollCreationMessage || message.pollCreationMessageV3) return 'poll_creation'
-        if (message.pollUpdateMessage) return 'poll_update'
+        if (message.conversation || message.extendedTextMessage) return 'text';
+        if (message.imageMessage) return 'image';
+        if (message.albumMessage) return 'album';
+        if (message.videoMessage || message.associatedChildMessage?.message?.videoMessage) return 'video';
+        if (message.audioMessage) return 'audio';
+        if (message.documentMessage) return 'document';
+        if (message.documentWithCaptionMessage) return 'document';
+        if (message.stickerMessage) return 'sticker';
+        if (message.locationMessage) return 'location';
+        if (message.contactMessage || message.contactsArrayMessage) return 'contact';
+        if (message.buttonsResponseMessage || message.listResponseMessage) return 'interactive_reply';
+        if (message.reactionMessage) return 'reaction';
+        if (message.pollCreationMessage || message.pollCreationMessageV3) return 'poll_creation';
+        if (message.pollUpdateMessage) return 'poll_update';
+        if (message.templateButtonReplyMessage) return 'template_button_reply';
+        if (message.pinInChatMessage) return 'pin_in_chat';
+        if (message.unpinInChatMessage) return 'unpin_in_chat';
+        if (message.questionReplyMessage) return 'question_reply';
+        // Detectar o tipo de interactiveButtons pela propriedade name, se interactive buttons tiver apenas um botão
+        if (message.interactiveMessage && message.interactiveMessage.interactiveButtons && message.interactiveMessage.interactiveButtons[0].name === 'review_and_pay') return 'review_and_pay';
+        if (message.interactiveMessage && message.interactiveMessage.interactiveButtons && message.interactiveMessage.interactiveButtons[0].name === 'review_order') return 'review_order';
+        if (message.interactiveMessage && message.interactiveMessage.interactiveButtons && message.interactiveMessage.interactiveButtons[0].name === 'quick_reply') return 'quick_reply';
+        if (message.interactiveMessage && message.interactiveMessage.interactiveButtons && message.interactiveMessage.interactiveButtons[0].name === 'cta_url') return 'cta_url';
+        if (message.interactiveMessage && message.interactiveMessage.interactiveButtons && message.interactiveMessage.interactiveButtons[0].name === 'cta_copy') return 'cta_copy';
+        if (message.interactiveMessage && message.interactiveMessage.interactiveButtons && message.interactiveMessage.interactiveButtons[0].name === 'cta_call') return 'cta_call';
+        if (message.interactiveMessage && message.interactiveMessage.interactiveButtons && message.interactiveMessage.interactiveButtons[0].name === 'voice_call') return 'voice_call';
+        if (message.interactiveResponseMessage && message.interactiveResponseMessage.nativeFlowResponseMessage && message.interactiveResponseMessage.nativeFlowResponseMessage.name === 'menu_options') return 'native_flow_menu_options_response';
+        if (message.interactiveResponseMessage && message.interactiveResponseMessage.nativeFlowResponseMessage) return 'native_flow_response';
 
-        return 'unknown'
+        if (message.interactiveMessage && message.interactiveMessage.interactiveButtons) return 'interactive_buttons';
+        if (message.interactiveMessage && message.interactiveMessage.interactiveList) return 'interactive_list';
+        if (message.interactiveResponseMessage) return 'interactive_response';
+
+        if (message.interactiveMessage) return 'interactive_message';
+
+        return 'unknown';
     }
 
 
@@ -118,25 +135,38 @@ class MessageNormalizer {
             message?.extendedTextMessage?.text ||
             message?.imageMessage?.caption ||
             message?.videoMessage?.caption ||
+            message?.associatedChildMessage?.message?.videoMessage?.caption ||
+            message?.documentWithCaptionMessage?.message?.documentMessage?.caption ||
             message?.buttonsResponseMessage?.selectedDisplayText ||
-            message?.listResponseMessage?.title || '';
+            message?.listResponseMessage?.title ||
+            message?.templateButtonReplyMessage?.selectedDisplayText ||
+            message.interactiveResponseMessage?.body?.text ||
+            message?.questionReplyMessage?.message?.extendedTextMessage?.text ||
+            '';
     }
 
     /** @private Extrai e formata os dados de mídia. */
     static _enrichWithTypedData(normalized, rawMessage, client) {
-        const type = Object.keys(rawMessage.message)[0];
-        const messageContent = rawMessage.message[type];
-        const mediaTypes = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage', 'stickerMessage'];
+        let content = rawMessage.message;
+        let type = Object.keys(rawMessage.message).find(key => key != "messageContextInfo");
+        if (type === 'associatedChildMessage') {
+            content = rawMessage.message.associatedChildMessage.message;
+            type = Object.keys(rawMessage.message.associatedChildMessage.message).find(key => key != "messageContextInfo");
+        }
+        const messageContent = content[type];
+        const mediaTypes = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage', 'stickerMessage', 'documentWithCaptionMessage'];
         if (mediaTypes.includes(type)) {
+            const rootData = content.documentWithCaptionMessage ? content.documentWithCaptionMessage : content;
             normalized.hasMedia = true;
             normalized.media = {
-                mimetype: messageContent.mimetype,
-                fileName: messageContent.fileName || null,
+                mimetype: messageContent.mimetype || messageContent.message?.documentMessage?.mimetype,
+                fileName: messageContent.fileName || messageContent.message?.documentMessage?.title,
+                caption: messageContent.caption || messageContent.message?.documentMessage?.caption,
                 duration: messageContent.seconds || null,
                 isPtt: messageContent.ptt || false,
                 isGif: messageContent.gifPlayback || false,
                 isViewOnce: messageContent.viewOnce || false,
-                getAttachments: () => client.messages.getAttachments(rawMessage)
+                getAttachments: () => client.messages.getAttachments(rootData)
             };
         }
 
@@ -146,6 +176,7 @@ class MessageNormalizer {
                 longitude: messageContent.degreesLongitude
             };
         }
+
     }
 
     /** @private Extrai os dados de uma resposta interativa (botão/lista). */
@@ -155,6 +186,12 @@ class MessageNormalizer {
 
         const listReply = message?.listResponseMessage;
         if (listReply) return { id: listReply.singleSelectReply?.selectedRowId, text: listReply.title };
+
+        const interactiveReply = message?.interactiveResponseMessage;
+        if (interactiveReply) return { id: interactiveReply.nativeFlowResponseMessage.name, text: interactiveReply.nativeFlowResponseMessage.paramsJson };
+
+        const questionReply = message?.questionReplyMessage;
+        if (questionReply) return { id: questionReply.selectedButtonId, text: questionReply.selectedDisplayText };
 
         return null;
     }
@@ -187,11 +224,16 @@ class MessageNormalizer {
                 pollUpdate.pollCreationMessageKey.remoteJid,
                 pollUpdate.pollCreationMessageKey.id
             );
+
+            if (!creationMsg) {
+                return null;
+            }
+
             creationMsg.raw.message.pollCreationMessage = creationMsg.raw.message.pollCreationMessage ? creationMsg.raw.message.pollCreationMessage :
                 creationMsg.raw.message.pollCreationMessageV3;
 
             // Verifica se a mensagem de criação existe e tem a estrutura correta
-            if (!creationMsg) {
+            if (!creationMsg.raw.message.pollCreationMessage) {
                 console.warn("Mensagem de criação da enquete não encontrada na store ou sem estrutura válida");
                 return {
                     pollCreationMessageId: pollUpdate.pollCreationMessageKey?.id,
@@ -319,6 +361,62 @@ class MessageNormalizer {
 
         return [];
     }
+
+    /** @private Extrai os dados de uma mensagem de resposta a uma pergunta. recebida de uma newsletter */
+    static _extractQuestionReply(raw) {
+        const message = raw.message;
+        const questionReply = message?.questionReplyMessage;
+        if (!questionReply) return null;
+
+        return {
+            id: raw.key.id,
+            creator: {
+                jid: raw.key.remoteJid,
+                pushName: raw.pushName,
+                verifiedBizName: raw.verifiedBizName
+            },
+            question: questionReply.question,
+            answer: questionReply.answer,
+            senderTimestamp: questionReply.messageTimestamp
+                ? new Date(Number(questionReply.messageTimestamp) * 1000)
+                : null,
+            raw: questionReply
+        }
+    }
+
+    /** @private Extrai os dados de uma mensagem de video. */
+    static _extractVideo(raw) {
+        const message = raw.message;
+        const video = message?.videoMessage;
+        if (!video) return null;
+
+        return {
+            id: raw.key.id,
+            creator: {
+                jid: raw.key.remoteJid,
+                pushName: raw.pushName,
+                verifiedBizName: raw.verifiedBizName
+            },
+            url: video.url,
+            mimetype: video.mimetype,
+            fileSha256: video.fileSha256,
+            fileLength: video.fileLength,
+            seconds: video.seconds,
+            mediaKey: video.mediaKey,
+            height: video.height,
+            width: video.width,
+            fileEncSha256: video.fileEncSha256,
+            directPath: video.directPath,
+            mediaKeyTimestamp: video.mediaKeyTimestamp,
+            jpegThumbnail: video.jpegThumbnail,
+            streamingSidecar: video.streamingSidecar,
+            externalShareFullVideoDurationInSeconds: video.externalShareFullVideoDurationInSeconds,
+            motionPhotoPresentationOffsetMs: video.motionPhotoPresentationOffsetMs,
+            raw: video
+        }
+    }
+
 }
+
 
 module.exports = MessageNormalizer;

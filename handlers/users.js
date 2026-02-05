@@ -20,16 +20,54 @@ class UserHandler {
     constructor(client) {
         this.client = client;
     }
+    /**
+     * @param {string} jid - O JID do contato.
+     * @returns {Promise<object>} - Um objeto contendo as informações do contato.
+     */
+    async getMetadata(jid) {
+        const contact = this.client.contacts.get(jid);
+        if (contact) {
+            return contact;
+        }
+        return await this.client.contacts.normalize({ key: { remoteJid: jid } });
+    }
 
+    /**
+     * @param {string} id - O ID do contato.
+     * @returns {Promise<object>} - Um objeto contendo as informações de recado do contato.
+     */
     async getStatus(id) {
         const myStatus = await this.client.sock.fetchStatus(id);
         return myStatus;
     }
 
+    /**
+     * @param {string} lid - O LID do contato.
+     * @returns {Promise<string>} - O JID do contato.
+     */
+    async getPnForLid(lid) {
+        if (!lid.endsWith('@lid')) {
+            throw new Error('LID inválido');
+        }
+        const jid = await this.client.sock.signalRepository.lidMapping.getPNForLID(lid);
+        return jid?.replace(/:.*?@/, "@")
+    }
+
+    /**
+     * @returns {Promise<object>} - Um objeto contendo as informações de recado do bot.
+     */
     async getMyStatus() {
         const { id } = this.client.sock.user;
         const myStatus = await this.getStatus(id);
         return myStatus;
+    }
+    /**
+     * @param {string} jid - O JID do contato.
+     * @returns {Promise<object>} - Um objeto contendo as informações do contato.
+     */
+    async getBusinessProfile(jid) {
+        this.client._validateConnection();
+        return this.client.sock.getBusinessProfile(jid);
     }
 
     /** Obtém a URL da foto de perfil de um usuário ou grupo. */
@@ -39,18 +77,10 @@ class UserHandler {
     }
 
     /** Verifica se um número está no WhatsApp. Inclusive retorna ID verdadeira para numeros brasileiros com 9 digitos */
-    async isOnWhatsApp(numbers) {
+    async isOnWhatsApp(number) {
         this.client._validateConnection();
-
-        // Se for apenas 1 número
-        if (!Array.isArray(numbers)) {
-            const [result] = await this.client.sock.onWhatsApp(numbers);
-            return result;
-        }
-
-        // Se for lista de números
-        const results = await this.client.sock.onWhatsApp(...numbers);
-        return results;
+        const [result] = await this.client.sock.onWhatsApp(number);
+        return result;
     }
 
     /** Atualiza o nome do perfil do bot. */
@@ -84,11 +114,11 @@ class UserHandler {
     }
 
     /** Envia uma atualização de presença. Use PresenceStatus */
-
     async sendPresence(jid, presenceStatus) {
         this.client._validateConnection();
         await this.client.sock.sendPresenceUpdate(presenceStatus, jid);
     }
+
 }
 
 module.exports = { UserHandler, PresenceStatus };

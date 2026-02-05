@@ -1,4 +1,3 @@
-const wb = require('@whiskeysockets/baileys');
 const {
     Browsers,
     makeWASocket,
@@ -10,11 +9,10 @@ const {
     getContentType,
     useMultiFileAuthState,
     fetchLatestBaileysVersion,
-} = require('@itsukichan/baileys');
+} = require('@areumtecnologia/wasockets');
 
 module.exports = {
-    whiskeysocketsMakeWASocket: wb.makeWASocket,
-    itsukichanMakeWASocket: makeWASocket,
+    makeWASocket,
     Browsers,
     decryptPollVote,
     DisconnectReason,

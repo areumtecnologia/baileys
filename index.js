@@ -2,16 +2,16 @@
 
 const {
     Browsers,
-    itsukichanMakeWASocket,
-    whiskeysocketsMakeWASocket,
+    makeWASocket,
     decryptPollVote,
     DisconnectReason,
     jidNormalizedUser,
     downloadContentFromMessage,
-    downloadMediaMessage,
     getContentType,
     useMultiFileAuthState,
     fetchLatestBaileysVersion,
+    getOldestMessageInChat,
+    fetchMessageHistory
 } = require('./handlers/baileys');
 const { Boom } = require('@hapi/boom');
 const EventEmitter = require('events');
@@ -25,7 +25,10 @@ const qrcodeTerminal = require('qrcode-terminal');
 const MessageHandler = require('./handlers/messages');
 const GroupHandler = require('./handlers/groups');
 const CallHandler = require('./handlers/calls');
+const NewsletterHandler = require('./handlers/newsletters');
 const { UserHandler, PresenceStatus } = require('./handlers/users');
+const ContactHandler = require('./handlers/contacts');
+
 const { MessageNormalizer, MessageStore } = require('./utils');
 const { InteractiveMessage, CallButton, CopyCodeButton, ListButton, ListRow, ListSection, QuickReplyButton, UrlButton, LocationButton } = require('./types/interactive-messages');
 const NodeCache = require("node-cache");
@@ -74,7 +77,7 @@ class Client extends EventEmitter {
         this.restartOnClose = options.restartOnClose || false;
         this.status = ClientEvent.DISCONNECTED;
         this.markOnlineOnConnect = options.markOnlineOnConnect || false;
-        this.enviroment = options.enviroment ? options.enviroment : null;
+        this.environment = options.environment ? options.environment : null;
         this.printQRInTerminal = options.printQRInTerminal || false;
         this.qrCode = null;
         // =================================================================================================
@@ -82,10 +85,12 @@ class Client extends EventEmitter {
         // =================================================================================================
         // Instancia os handlers, passando a si mesma (this) como referência.
         // Isso permite que os handlers acessem o 'sock' e outros métodos do cliente.
-        this.messages = new MessageHandler(this);
         this.groups = new GroupHandler(this);
         this.users = new UserHandler(this);
         this.calls = new CallHandler(this);
+        this.newsletters = new NewsletterHandler(this);
+        this.contacts = new ContactHandler(this);
+        this.messages = new MessageHandler(this);
     }
 
     /**
@@ -97,42 +102,24 @@ class Client extends EventEmitter {
         this.status = ClientEvent.INIT;
         const { state, saveCreds } = await useMultiFileAuthState(this.sessionPath);
         const { version } = await fetchLatestBaileysVersion();
-        const credsPath = path.resolve(process.cwd(), this.sessionPath, "creds.json");
-        const creds = await this.fileExists(credsPath);
-        if (creds) {
-            // Conecta usando @itsukichan/baileys
-            this.sock = itsukichanMakeWASocket({
-                auth: state,
-                version,
-                browser: this.enviroment ? this.enviroment : Browsers.macOS("Desktop"),
-                logger: pino({ level: this.loggerLevel }),
-                markOnlineOnConnect: this.markOnlineOnConnect || false,
-                keepAliveIntervalMs: 15000,
-                cachedGroupMetadata: async (jid) => groupCache.get(jid),
-                getMessage: async (key) => {
-                    const chatId = key.remoteJid;
-                    const msg = this.store?.getMessage(chatId, key.id);
-                    // precisa retornar o raw.message
-                    return msg ? msg.raw?.message : undefined;
-                }
-            });
-        } else {
-            // Conecta usando Baileys
-            this.sock = whiskeysocketsMakeWASocket({
-                auth: state,
-                version,
-                browser: this.enviroment ? this.enviroment : Browsers.macOS("Desktop"),
-                logger: pino({ level: this.loggerLevel }),
-                markOnlineOnConnect: this.markOnlineOnConnect || false,
-                cachedGroupMetadata: async (jid) => groupCache.get(jid),
-                getMessage: async (key) => {
-                    const chatId = key.remoteJid;
-                    const msg = this.store?.getMessage(chatId, key.id);
-                    // precisa retornar o raw.message
-                    return msg ? msg.raw?.message : undefined;
-                }
-            });
-        }
+
+        this.sock = makeWASocket({
+            auth: state,
+            version,
+            browser: this.environment ? this.environment : Browsers.macOS("Desktop"),
+            logger: pino({ level: this.loggerLevel }),
+            markOnlineOnConnect: this.markOnlineOnConnect || false,
+            keepAliveIntervalMs: 20000,
+            connectTimeoutMs: 30000,
+            defaultQueryTimeoutMs: 30000,
+            cachedGroupMetadata: async (jid) => groupCache.get(jid),
+            getMessage: async (key) => {
+                const chatId = key.remoteJid;
+                const msg = this.store?.getMessage(chatId, key.id);
+                // precisa retornar o raw.message
+                return msg ? msg.raw?.message : undefined;
+            }
+        });
 
         // =================================================================================================
         //                                     EVENTO CENTRALIZADO DE CICLO DE VIDA
@@ -187,11 +174,11 @@ class Client extends EventEmitter {
                     break;
 
                 case 'open':
-                    this.user = this.sock.user;
-                    this.qrCode = null; // Limpa o QR code após a conexão
                     this.connected = true;
-                    this.manualDisconnect = false;
                     this.status = ClientEvent.CONNECTED;
+                    this.manualDisconnect = false;
+                    this.qrCode = null;
+                    this.user = await this.itsMe();
                     this.emit(ClientEvent.CONNECTED, this.user);
                     this.emit(ClientEvent.STATUS_CHANGE, this.status);
                     this.presenceSetInterval = setInterval(() => {
@@ -273,30 +260,56 @@ class Client extends EventEmitter {
         });
         this.sock.ev.on('groups.update', async ([event]) => {
             this.emit(ClientEvent.GROUP_UPDATE, event);
-            const metadata = await this.sock.groupMetadata(event.id);
-            groupCache.set(event.id, metadata);
+            let contact = await this.contacts.get(event.id);
+            if (!contact) {
+                contact = await this.contacts.normalize({ key: { remoteJid: event.id, fromMe: false } });
+                this.contacts.set(contact.id, contact);
+            }
+            groupCache.set(event.id, contact.metadata);
         });
 
         this.sock.ev.on('group-participants.update', async (event) => {
             this.emit(ClientEvent.GROUP_PARTICIPANTS_UPDATE, event);
-            const metadata = await this.sock.groupMetadata(event.id)
-            groupCache.set(event.id, metadata)
+            let contact = await this.contacts.get(event.id);
+            if (!contact) {
+                contact = await this.contacts.normalize({ key: { remoteJid: event.id, fromMe: false } });
+                this.contacts.set(contact.id, contact);
+            }
+            groupCache.set(event.id, contact.metadata);
         });
 
-        this.sock.ev.on('presence.update', (update) => this.emit(ClientEvent.PRESENCE_UPDATE, update));
-        this.sock.ev.on('contacts.update', (updates) => this.emit(ClientEvent.CONTACT_UPDATE, updates));
-        this.sock.ev.on('blocklist.update', (update) => this.emit(ClientEvent.BLOCKLIST_UPDATE, update));
-        this.sock.ev.on('chats.update', (updates) => this.emit(ClientEvent.CHAT_UPDATE, updates));
-        this.sock.ev.on('chats.delete', (jids) => this.emit(ClientEvent.CHAT_DELETE, jids));
+        this.sock.ev.on('presence.update', (event) => this.emit(ClientEvent.PRESENCE_UPDATE, event));
+        this.sock.ev.on('contacts.update', async (event) => {
+            this.emit(ClientEvent.CONTACT_UPDATE, event);
+            // event é um array de objetos {id, imgUrl, name, etc}. 
+            // Filtrar apenas os objetos que tiverem propriedades contendo valores igual a 'changed'
+            const cs = event.filter(c => Object.values(c).some(v => v === 'changed'));
+            for (const c of cs) {
+                let jid = c.id;
+                if (c.id.endsWith('@lid')) {
+                    jid = await this.users.getPnForLid(c.id);
+                }
+                let contact = jid ? await this.contacts.get(jid) : null;
+                if (!contact) {
+                    contact = await this.contacts.normalize({ key: { remoteJid: jid } });
+                }
+                this.contacts.set(contact.id, contact);
+            }
+        });
+        this.sock.ev.on('blocklist.update', (event) => this.emit(ClientEvent.BLOCKLIST_UPDATE, event));
+        this.sock.ev.on('chats.update', (event) => this.emit(ClientEvent.CHAT_UPDATE, event));
+        this.sock.ev.on('chats.delete', (event) => this.emit(ClientEvent.CHAT_DELETE, event));
 
-        this.sock.ev.on('messaging-history.set', (history) => {
+        this.sock.ev.on('messaging-history.set', async (history) => {
             try {
 
                 for (const chat of history.chats) {
                     const chatId = chat.id;
+                    const contact = await this.contacts.normalize({ key: { remoteJid: chatId } });
+                    this.contacts.set(contact.id, contact);
                     const messages = history.messages.filter(m => m.key.remoteJid === chatId);
                     for (const msg of messages) {
-                        const nmsg = MessageNormalizer.normalize(msg, this);
+                        const nmsg = MessageNormalizer.normalize(contact, msg, this);
                         if (nmsg && this.store && this.store?.setMessage) this.store?.setMessage(chatId, nmsg);
                     }
                 }
@@ -306,21 +319,26 @@ class Client extends EventEmitter {
                 this.emit(ClientEvent.ERROR, error);
             }
         });
-        this.sock.ev.on('messages.update', (updates) => this.emit(ClientEvent.MESSAGE_UPDATE, updates));
-        this.sock.ev.on('messages.delete', (item) => this.emit(ClientEvent.MESSAGE_DELETE, item));
-        this.sock.ev.on('messages.reaction', (reactions) => this.emit(ClientEvent.MESSAGE_REACTION, reactions));
+        this.sock.ev.on('messages.update', (event) => this.emit(ClientEvent.MESSAGE_UPDATE, event));
+        this.sock.ev.on('messages.delete', (event) => this.emit(ClientEvent.MESSAGE_DELETE, event));
+        this.sock.ev.on('messages.reaction', (event) => this.emit(ClientEvent.MESSAGE_REACTION, event));
         this.sock.ev.on('messages.upsert', async (event) => {
             try {
-
                 const { messages, type } = event;
                 const msg = messages[0];
+
                 if (!msg.message || msg.message.protocolMessage) {
                     this.emit(ClientEvent.NOTIFICATION, msg);
                 } else {
+                    let contact = await this.contacts.get(msg.key.remoteJid);
+                    if (!contact) {
+                        contact = await this.contacts.normalize(msg); // msg ja contem tudo que precisa
+                        this.contacts.set(contact.id, contact);
+                    }
                     if (msg.broadcast || msg.key.remoteJid == 'status@broadcast') {
                         this.emit(ClientEvent.BROADCAST_MESSAGE, msg);
                     } else {
-                        const nmsg = await MessageNormalizer.normalize(msg, this);
+                        const nmsg = await MessageNormalizer.normalize(contact, msg, this);
                         if (nmsg && this.store && this.store?.setMessage) {
                             this.store?.setMessage(nmsg.chatId, nmsg);
                         }
@@ -346,10 +364,19 @@ class Client extends EventEmitter {
                     }
                 }
             } catch (error) {
-                this.emit(ClientEvent.ERROR, error);
+                this.emit(ClientEvent.ERROR, { error, event });
             }
 
         });
+    }
+
+    /**
+     * @returns {Promise<object>} - Um objeto contendo as informações do contato.
+     */
+    async itsMe() {
+        if (!this.sock.user) return null;
+        const wid = this.sock.user.id.replace(/:.*?@/, "@");
+        return await this.contacts.normalize({ key: { remoteJid: wid, fromMe: true } });
     }
 
     /**
@@ -383,8 +410,8 @@ class Client extends EventEmitter {
      * @throws {Error} Se o cliente não estiver conectado.
      */
     _validateConnection() {
-        if (!this.sock || !this.connected) {
-            throw new Error('Cliente não está conectado.');
+        if (!this.sock || this.status !== ClientEvent.CONNECTED) {
+            throw new Error('Cliente não está conectado.', { cause: this.status });
         }
     }
 
@@ -415,6 +442,19 @@ class Client extends EventEmitter {
         } catch {
             return false;
         }
+    }
+    // Metodo para enviar notificacao "digitando"
+    composing(jid, ts) {
+        return this.sock.sendPresenceUpdate('composing', jid);
+    }
+
+    async getMessages(jid, limit = 50) {
+        const msg = await getOldestMessageInChat(jid)
+        return await fetchMessageHistory(
+            limit, //quantity (max: 50 per query)
+            msg.key,
+            msg.messageTimestamp
+        )
     }
 
 }
