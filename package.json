@@ -1,7 +1,7 @@
 {
   "name": "@areumtecnologia/baileys",
-  "version": "1.1.18",
-  "description": "More baileys Wrapper",
+  "version": "1.1.25",
+  "description": "just another Baileys wrapper",
   "license": "ISC",
   "author": "Áreum Tecnologia",
   "type": "commonjs",
@@ -10,7 +10,7 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "@areumtecnologia/wasockets": "^1.0.0",
+    "@areumtecnologia/wasockets": "^1.0.1",
     "crypto-digest-sync": "^1.0.0",
     "node-cache": "^5.1.2",
     "qrcode": "^1.5.4",

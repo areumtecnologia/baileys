@@ -45,7 +45,8 @@ class MessageHandler {
                 await new Promise(r => setTimeout(() => r(true), options.recording?.timeout));
             }
             const msg = await this.client.sock.sendMessage(verifiedJid.jid, content, options);
-            const nmsg = await MessageNormalizer.normalize(msg, this.client);
+            const c = await this.client.contacts.normalize({ key: { remoteJid: verifiedJid.jid } });
+            const nmsg = await MessageNormalizer.normalize(c, msg, this.client);
             return nmsg;
         }
         else {

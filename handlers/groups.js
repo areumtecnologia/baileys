@@ -46,7 +46,7 @@ class GroupHandler {
      */
     constructor(client) {
         this.client = client;
-        this.groups = new Map();
+        this.store = new Map();
     }
 
     /** Obtém os metadados de um grupo a partir da jid do grupo. 
@@ -60,11 +60,11 @@ class GroupHandler {
         if (!groupId.endsWith('@g.us')) {
             return { error: new Error('Invalid group ID') };
         }
-        if (this.groups.has(groupId)) {
-            return this.groups.get(groupId);
+        if (this.store.has(groupId)) {
+            return this.store.get(groupId);
         }
         const groupMetadata = await this.client.sock.groupMetadata(groupId);
-        this.groups.set(groupId, groupMetadata);
+        this.store.set(groupId, groupMetadata);
         return groupMetadata;
     }
     /** Obtém todos os grupos que o cliente participa. */
@@ -77,9 +77,9 @@ class GroupHandler {
         if (groups.error) {
             return { error: groups.error };
         }
-        // add groups to this.groups
-        groups.forEach((group) => {
-            this.groups.set(group.id, group);
+        // add groups to this.store
+        Object.values(groups).forEach((group) => {
+            this.store.set(group.id, group);
         });
 
         // convert groups to array

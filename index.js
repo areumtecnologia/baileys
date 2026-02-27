@@ -48,7 +48,7 @@ const groupCache = new NodeCache({ stdTTL: 5 * 60, useClones: false });
  * @fires Client#message_delete
  * @fires Client#message_reaction
  * @fires Client#incoming_call
- * @fires Client#group_update
+ * @fires Client#GROUPS_UPDATE
  * @fires Client#group_participants_update
  * @fires Client#presence_update
  * @fires Client#chat_update
@@ -77,7 +77,7 @@ class Client extends EventEmitter {
         this.restartOnClose = options.restartOnClose || false;
         this.status = ClientEvent.DISCONNECTED;
         this.markOnlineOnConnect = options.markOnlineOnConnect || false;
-        this.environment = options.environment ? options.environment : null;
+        this.environment = options.environment || ['Mac OS', 'Chrome', '144.0.7559.110'];
         this.printQRInTerminal = options.printQRInTerminal || false;
         this.qrCode = null;
         // =================================================================================================
@@ -106,7 +106,8 @@ class Client extends EventEmitter {
         this.sock = makeWASocket({
             auth: state,
             version,
-            browser: this.environment ? this.environment : Browsers.macOS("Desktop"),
+            browser: this.environment,
+            syncFullHistory: false,
             logger: pino({ level: this.loggerLevel }),
             markOnlineOnConnect: this.markOnlineOnConnect || false,
             keepAliveIntervalMs: 20000,
@@ -188,65 +189,110 @@ class Client extends EventEmitter {
                     }, 30_000);
                     break;
 
-                case 'close':
-                    // Cancelar o intervalo
+                case 'close': {
+                    // limpar presença
                     if (this.presenceSetInterval) {
                         clearInterval(this.presenceSetInterval);
                         this.presenceSetInterval = null;
                     }
-                    // Aqui entraria a lógica que já existe para tratar a desconexão
-                    this.qrCode = null;
+
                     this.connected = false;
-                    let disconnectReason, statusType;
+                    this.qrCode = null;
+
                     const boomError = new Boom(lastDisconnect?.error);
                     const statusCode = boomError?.output?.statusCode;
-                    const reasonType = boomError.data?.content?.[0]?.attrs?.type || boomError.data?.attrs?.type || 'unknown';
+                    const reasonType =
+                        boomError?.data?.content?.[0]?.attrs?.type ||
+                        boomError?.data?.attrs?.type ||
+                        'unknown';
 
-                    // Conexao fechada apos leitura bem-sucedida do qrcode para que uma nova conexao seja feita. Nao ha necessidade de disparar evento de desconexao
-                    if (statusCode === DisconnectReason.restartRequired) {
-                        return this.connect();
+                    let statusType;
+                    let shouldReconnect = false;
+
+                    switch (statusCode) {
+
+                        /** 🔄 WhatsApp pediu restart explícito (515)*/
+                        case DisconnectReason.restartRequired:
+                            return this.connect();
+
+                        /** 🔐 Sessão inválida / corrompida */
+                        case DisconnectReason.badSession:
+                            statusType = DisconnectReasons.BAD_SESSION;
+                            shouldReconnect = false;
+                            try {
+                                await fs.rm(this.sessionPath, { recursive: true, force: true });
+                            } catch { }
+                            break;
+
+                        /** 🚪 Logout explícito (401)*/
+                        case DisconnectReason.loggedOut:
+                            statusType = DisconnectReasons.LOGGED_OUT;
+                            shouldReconnect = false;
+                            try {
+                                await fs.rm(this.sessionPath, { recursive: true, force: true });
+                            } catch { }
+                            break;
+
+                        /** 🔁 Outra instância assumiu a sessão */
+                        case DisconnectReason.connectionReplaced:
+                            statusType = DisconnectReasons.CONNECTION_REPLACED;
+                            shouldReconnect = false;
+                            break;
+
+                        /** 🌐 Serviço indisponível (503) */
+                        case DisconnectReason.unavailableService:
+                            statusType = DisconnectReasons.SERVICE_UNAVAILABLE;
+                            shouldReconnect = true;
+                            break;
+
+                        /** 🧩 Incompatibilidade Multi-Device (418)*/
+                        case DisconnectReason.multideviceMismatch:
+                            statusType = DisconnectReasons.MULTIDEVICE_MISMATCH;
+                            shouldReconnect = false;
+                            break;
+
+                        /** ⏱ Timeout (408) */
+                        case DisconnectReason.timedOut:
+                            statusType = DisconnectReasons.TIMEOUT;
+                            shouldReconnect = this.status === ClientEvent.PAIRING_CODE ? false : true;
+                            break;
+
+                        /** 🔌 Conexão perdida (401) */
+                        case DisconnectReason.connectionLost:
+                        case DisconnectReason.connectionClosed:
+                            statusType = DisconnectReasons.CONNECTION_LOST;
+                            shouldReconnect = true;
+                            break;
+
+                        /** ❓ Qualquer outro caso */
+                        default:
+                            statusType = DisconnectReasons.UNKNOWN;
+                            shouldReconnect = this.restartOnClose;
+                            break;
                     }
 
-                    if (this.manualDisconnect) {
-                        // Desconexão manual solicitada pelo cliente.
-                        statusType = DisconnectReasons.MANUAL_DISCONNECT;
-                        disconnectReason = { statusCode, statusType, reason: reasonType, details: lastDisconnect };
-                    } else if (statusCode === DisconnectReason.loggedOut) {
-                        // 'Sessão deslogada por motivo desconhecido.'
-                        statusType = DisconnectReasons.LOGGED_OUT;
-                        disconnectReason = { statusCode, statusType, reason: reasonType, details: boomError.data };
-                        try {
-                            await fs.rm(this.sessionPath, { recursive: true, force: true });
-                            // if (this.restartOnClose) this.connect();
-                        } catch (err) {
-                            this.emit(ClientEvent.ERROR, err);
-                        }
-                    } else if (statusCode === 408) {
-                        // 'Sessão deslogada por motivo desconhecido.'
-                        statusType = DisconnectReasons.PAIRING_FAILED;
-                        disconnectReason = { statusCode, statusType, reason: 'qr_read_attempts_ended', details: boomError.data };
-                    } else {
-                        //'Conexão perdida por erro ou instabilidade.'
-                        statusType = DisconnectReasons.CONNECTION_ERROR;
-                        disconnectReason = { statusCode, statusType, reason: reasonType, details: lastDisconnect?.error };
-                    }
+                    const disconnectReason = {
+                        statusCode,
+                        statusType,
+                        reason: reasonType,
+                        details: lastDisconnect?.error,
+                    };
 
                     this.status = ClientEvent.DISCONNECTED;
                     this.emit(ClientEvent.DISCONNECTED, disconnectReason);
                     this.emit(ClientEvent.STATUS_CHANGE, this.status);
-                    // Reinicia a conexao se o servidor originar desconexao, especialmente 503
-                    if (statusCode === DisconnectReason.unavailableService) {
-                        return this.connect();
-                    }
 
-                    // Lógica de reconexão em caso de erros desconhecidos
-                    if (statusType === DisconnectReasons.CONNECTION_ERROR) {
-                        this.emit(ClientEvent.ERROR, update);
-                        if (this.restartOnClose) {
-                            this.connect();
+                    if (shouldReconnect && this.restartOnClose && !this.manualDisconnect) {
+                        try {
+                            await this.connect();
+                        } catch (err) {
+                            this.emit(ClientEvent.ERROR, err);
                         }
                     }
+
                     break;
+                }
+
             }
 
         });
@@ -258,14 +304,27 @@ class Client extends EventEmitter {
         this.sock.ev.on('call', ([call]) => {
             this.emit(ClientEvent.CALL, this.calls.normalizeCall(call));
         });
-        this.sock.ev.on('groups.update', async ([event]) => {
-            this.emit(ClientEvent.GROUP_UPDATE, event);
-            let contact = await this.contacts.get(event.id);
-            if (!contact) {
-                contact = await this.contacts.normalize({ key: { remoteJid: event.id, fromMe: false } });
-                this.contacts.set(contact.id, contact);
+        this.sock.ev.on('groups.upsert', async (groups) => {
+            this.emit(ClientEvent.GROUPS_UPSERT, groups);
+            groups.forEach((group) => {
+                this.groups.store.set(group.id, group);
+            });
+        });
+
+        this.sock.ev.on('groups.update', async (grupos) => {
+            if (!this.user?.groups) return;
+            const gp = [];
+            for (const g of grupos) {
+                let contact = await this.contacts.get(g.id);
+                contact = await this.contacts.normalize({ key: { remoteJid: g.id, fromMe: false } });
+                if (contact && contact.id && contact.name && contact.id !== this.user?.id) {
+                    this.contacts.set(contact.id, contact);
+                }
+                this.groups.store.set(g.id, contact.metadata);
+                groupCache.set(g.id, contact.metadata);
+                gp.push(contact.metadata);
             }
-            groupCache.set(event.id, contact.metadata);
+            this.emit(ClientEvent.GROUPS_UPDATE, gp);
         });
 
         this.sock.ev.on('group-participants.update', async (event) => {
@@ -273,47 +332,74 @@ class Client extends EventEmitter {
             let contact = await this.contacts.get(event.id);
             if (!contact) {
                 contact = await this.contacts.normalize({ key: { remoteJid: event.id, fromMe: false } });
-                this.contacts.set(contact.id, contact);
+                if (contact && contact.id && contact.name && contact.id !== this.user?.id) {
+                    this.contacts.set(contact.id, contact);
+                }
             }
-            groupCache.set(event.id, contact.metadata);
+            this.groups.store.set(event.id, contact.metadata);
         });
 
         this.sock.ev.on('presence.update', (event) => this.emit(ClientEvent.PRESENCE_UPDATE, event));
+        this.sock.ev.on('contacts.upsert', (contacts) => this.emit(ClientEvent.CONTACTS_UPSERT, contacts));
         this.sock.ev.on('contacts.update', async (event) => {
-            this.emit(ClientEvent.CONTACT_UPDATE, event);
+            const cxs = [];
             // event é um array de objetos {id, imgUrl, name, etc}. 
             // Filtrar apenas os objetos que tiverem propriedades contendo valores igual a 'changed'
             const cs = event.filter(c => Object.values(c).some(v => v === 'changed'));
             for (const c of cs) {
-                let jid = c.id;
+                let jid = null; // jid sempre precisa ser pn 123456789@s.whatsapp.net e c.id pode ser 123456789@lid ou 123456789@s.whatsapp.net
                 if (c.id.endsWith('@lid')) {
                     jid = await this.users.getPnForLid(c.id);
+                } else {
+                    jid = c.id;
                 }
+                // Verifica se o contato existe no cache
                 let contact = jid ? await this.contacts.get(jid) : null;
+                // Se não existir, normaliza o contato com base no jid
                 if (!contact) {
                     contact = await this.contacts.normalize({ key: { remoteJid: jid } });
                 }
-                this.contacts.set(contact.id, contact);
+                // Adiciona contato valido no cache e no array
+                if (contact && contact.id && contact.name && contact.id !== this.user?.id) {
+                    cxs.push(contact);
+                    this.contacts.set(contact.id, contact);
+                }
+            }
+            // So emite o evento se houver contatos atualizados
+            if (cxs.length > 0) {
+                this.emit(ClientEvent.CONTACTS_UPDATE, cxs);
             }
         });
         this.sock.ev.on('blocklist.update', (event) => this.emit(ClientEvent.BLOCKLIST_UPDATE, event));
         this.sock.ev.on('chats.update', (event) => this.emit(ClientEvent.CHAT_UPDATE, event));
         this.sock.ev.on('chats.delete', (event) => this.emit(ClientEvent.CHAT_DELETE, event));
 
-        this.sock.ev.on('messaging-history.set', async (history) => {
+        this.sock.ev.on('messaging-history.set', async ({ chats, contacts, messages, isLatest, syncType }) => {
+            console.log(`Recebidos ${chats.length} chats e ${contacts.length} contatos.`);
+            console.log(`Tipo de sincronização: ${syncType}`);
             try {
-
-                for (const chat of history.chats) {
+                // Normaliza os contatos
+                for (const contact of contacts) {
+                    const chatId = contact.id;
+                    const c = await this.contacts.normalize({ key: { remoteJid: chatId } });
+                    if (c && c.id && c.name && c.id !== this.user?.id) {
+                        this.contacts.set(c.id, c);
+                    }
+                }
+                // Normaliza os chats
+                for (const chat of chats) {
                     const chatId = chat.id;
-                    const contact = await this.contacts.normalize({ key: { remoteJid: chatId } });
-                    this.contacts.set(contact.id, contact);
-                    const messages = history.messages.filter(m => m.key.remoteJid === chatId);
+                    const c = await this.contacts.normalize({ key: { remoteJid: chatId } });
+                    if (c && c.id && c.name && c.id !== this.user?.id) {
+                        this.contacts.set(c.id, c);
+                    }
+                    const messages = messages.filter(m => m.key.remoteJid === chatId);
                     for (const msg of messages) {
-                        const nmsg = MessageNormalizer.normalize(contact, msg, this);
+                        const nmsg = MessageNormalizer.normalize(c, msg, this);
                         if (nmsg && this.store && this.store?.setMessage) this.store?.setMessage(chatId, nmsg);
                     }
                 }
-                this.emit(ClientEvent.MESSAGES_HISTORY_SYNC_DONE, history);
+                this.emit(ClientEvent.MESSAGES_HISTORY_SYNC_DONE, { chats, contacts, messages, isLatest, syncType });
 
             } catch (error) {
                 this.emit(ClientEvent.ERROR, error);
@@ -333,7 +419,6 @@ class Client extends EventEmitter {
                     let contact = await this.contacts.get(msg.key.remoteJid);
                     if (!contact) {
                         contact = await this.contacts.normalize(msg); // msg ja contem tudo que precisa
-                        this.contacts.set(contact.id, contact);
                     }
                     if (msg.broadcast || msg.key.remoteJid == 'status@broadcast') {
                         this.emit(ClientEvent.BROADCAST_MESSAGE, msg);
@@ -352,6 +437,10 @@ class Client extends EventEmitter {
                                 if (msg.key.fromMe) {
                                     this.emit(ClientEvent.MESSAGE_SENT, nmsg);
                                 } else {
+                                    // So adiciona contato no cache se for recebido
+                                    if (contact && contact.id && contact.name && contact.id !== this.user?.id) {
+                                        this.contacts.set(contact.id, contact);
+                                    }
                                     this.emit(ClientEvent.MESSAGE_RECEIVED, nmsg);
                                 }
 
@@ -376,7 +465,10 @@ class Client extends EventEmitter {
     async itsMe() {
         if (!this.sock.user) return null;
         const wid = this.sock.user.id.replace(/:.*?@/, "@");
-        return await this.contacts.normalize({ key: { remoteJid: wid, fromMe: true } });
+        const me = await this.contacts.normalize({ key: { remoteJid: wid, fromMe: true } });
+        me.environment = this.environment;
+        me.groups = await this.groups.getAllGroups();
+        return me;
     }
 
     /**
@@ -435,14 +527,6 @@ class Client extends EventEmitter {
         return getContentType(message);
     }
 
-    async fileExists(path) {
-        try {
-            await fs.access(path, constants.F_OK);
-            return true;
-        } catch {
-            return false;
-        }
-    }
     // Metodo para enviar notificacao "digitando"
     composing(jid, ts) {
         return this.sock.sendPresenceUpdate('composing', jid);
@@ -473,12 +557,14 @@ class ClientEvent {
     static MESSAGE_DELETE = 'message_delete';
     static MESSAGE_REACTION = 'message_reaction';
     static CALL = 'call';
-    static GROUP_UPDATE = 'group_update';
+    static GROUPS_UPDATE = 'GROUPS_UPDATE';
     static GROUP_PARTICIPANTS_UPDATE = 'group_participants_update';
+    static GROUPS_UPSERT = 'GROUPS_UPSERT';
     static PRESENCE_UPDATE = 'presence_update';
     static CHAT_UPDATE = 'chat_update';
     static CHAT_DELETE = 'chat_delete';
-    static CONTACT_UPDATE = 'contact_update';
+    static CONTACTS_UPSERT = 'contacts_upsert';
+    static CONTACTS_UPDATE = 'contacts_update';
     static BLOCKLIST_UPDATE = 'blocklist_update';
     static PAIRING_CODE = 'pairing_code';
     static PAIRING_SUCCESS = 'pairing_success';
@@ -500,6 +586,14 @@ class DisconnectReasons {
     static RESTART_REQUIRED = 'restart_required';
     static UNAVAILABLE_SERVICE = 'unavailable_service';
     static UNKNOWN = 'unknown';
+    static QR_READ_ATTEMPTS_ENDED = 'qr_read_attempts_ended';
+    static BAD_SESSION = 'bad_session';
+    static CONNECTION_LOST = 'connection_lost';
+    static CONNECTION_CLOSED = 'connection_closed';
+    static CONNECTION_REPLACED = 'connection_replaced';
+    static MULTIDEVICE_MISMATCH = 'multidevice_mismatch';
+    static TIMED_OUT = 'timed_out';
+    static UNAUTHORIZED = 'unauthorized';
 }
 
 module.exports = {

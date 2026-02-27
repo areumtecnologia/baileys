@@ -67,13 +67,17 @@ class UserHandler {
      */
     async getBusinessProfile(jid) {
         this.client._validateConnection();
-        return this.client.sock.getBusinessProfile(jid);
+        return await this.client.sock.getBusinessProfile(jid);
     }
 
     /** Obtém a URL da foto de perfil de um usuário ou grupo. */
     async getProfilePicture(jid) {
-        this.client._validateConnection();
-        return this.client.sock.profilePictureUrl(jid, 'image');
+        try {
+            this.client._validateConnection();
+            return await this.client.sock.profilePictureUrl(jid, 'image');
+        } catch (error) {
+            return null;
+        }
     }
 
     /** Verifica se um número está no WhatsApp. Inclusive retorna ID verdadeira para numeros brasileiros com 9 digitos */
@@ -86,37 +90,37 @@ class UserHandler {
     /** Atualiza o nome do perfil do bot. */
     async updateProfileName(newName) {
         this.client._validateConnection();
-        return this.client.sock.updateProfileName(newName);
+        return await this.client.sock.updateProfileName(newName);
     }
 
     /** Atualiza o recado/status do perfil do bot. */
     async updateProfileStatus(newStatus) {
         this.client._validateConnection();
-        return this.client.sock.updateProfileStatus(newStatus);
+        return await this.client.sock.updateProfileStatus(newStatus);
     }
 
     /** Bloqueia um usuário. */
     async block(jid) {
         this.client._validateConnection();
-        return this.client.sock.updateBlockStatus(jid, 'block');
+        return await this.client.sock.updateBlockStatus(jid, 'block');
     }
 
     /** Desbloqueia um usuário. */
     async unblock(jid) {
         this.client._validateConnection();
-        return this.client.sock.updateBlockStatus(jid, 'unblock');
+        return await this.client.sock.updateBlockStatus(jid, 'unblock');
     }
 
     /** Obtém a lista de contatos bloqueados. */
     async getBlocklist() {
         this.client._validateConnection();
-        return this.client.sock.fetchBlocklist();
+        return await this.client.sock.fetchBlocklist();
     }
 
     /** Envia uma atualização de presença. Use PresenceStatus */
     async sendPresence(jid, presenceStatus) {
         this.client._validateConnection();
-        await this.client.sock.sendPresenceUpdate(presenceStatus, jid);
+        return await this.client.sock.sendPresenceUpdate(presenceStatus, jid);
     }
 
 }
