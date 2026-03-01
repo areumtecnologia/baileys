@@ -120,7 +120,12 @@ Gerenciamento completo de grupos.
 -   `updateName(groupId, newName)`: Altera o nome do grupo.
 -   `updateDescription(groupId, newDescription)`: Altera a descrição.
 -   `updateParticipants(groupId, participantsJids, action)`: Adiciona, remove ou promove membros.
+-   `removeParticipants(groupId, participantsJids)`: Remove participantes de um grupo.
+-   `addParticipants(groupId, participantsJids)`: Adiciona participantes a um grupo.
+-   `promoteParticipants(groupId, participantsJids)`: Promove participantes de um grupo.
+-   `demoteParticipants(groupId, participantsJids)`: Rebaixa participantes de um grupo.
 -   `getInviteCode(groupId)`: Obtém o código de convite.
+-   `revokeInviteCode(groupId)`: Revoga o código de convite.
 
 ### 👤 Usuários (`client.users`)
 

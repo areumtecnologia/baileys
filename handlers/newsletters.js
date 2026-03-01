@@ -169,6 +169,16 @@ class NewsletterHandler {
         this.client._validateConnection();
         return this.client.sock.newsletterReactionMode(jid, mode);
     }
+
+    /**
+     * Obtém todas as newsletters que o cliente participa.
+     * @returns {Promise<object>} O resultado da operação.
+     */
+    async getAllNewsletters() {
+        this.client._validateConnection();
+        const result = await this.client.sock.newsletterSubscribed();
+        return result?.xwa2_newsletter_subscribed || [];
+    }
 }
 
 module.exports = NewsletterHandler;

@@ -468,6 +468,7 @@ class Client extends EventEmitter {
         const me = await this.contacts.normalize({ key: { remoteJid: wid, fromMe: true } });
         me.environment = this.environment;
         me.groups = await this.groups.getAllGroups();
+        me.newsletters = await this.newsletters.getAllNewsletters();
         return me;
     }
 

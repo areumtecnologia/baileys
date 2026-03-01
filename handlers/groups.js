@@ -115,16 +115,80 @@ class GroupHandler {
         return this.client.sock.groupUpdateDescription(groupId, newDescription);
     }
 
-    /** Modifica a lista de participantes de um grupo. */
+    /**
+     * Adiciona, remove ou promove participantes de um grupo.
+     * @param {string} groupId - O ID do grupo.
+     * @param {string[]} participantsJids - Lista de JIDs dos participantes.
+     * @param {'add'|'remove'} action - A ação a ser realizada.
+     * @returns {Promise<Object>} Resultado da operação.
+     */
     async updateParticipants(groupId, participantsJids, action) {
         this.client._validateConnection();
         return this.client.sock.groupParticipantsUpdate(groupId, participantsJids, action);
     }
 
-    /** Obtém o código de convite de um grupo. */
+    /**
+     * Remove participantes de um grupo.
+     * @param {string} groupId - O ID do grupo.
+     * @param {string[]} participantsJids - Lista de JIDs dos participantes.
+     * @returns {Promise<Object>} Resultado da operação.
+     */
+    async removeParticipants(groupId, participantsJids) {
+        this.client._validateConnection();
+        return this.client.sock.groupParticipantsUpdate(groupId, participantsJids, 'remove');
+    }
+
+    /**
+     * Adiciona participantes a um grupo.
+     * @param {string} groupId - O ID do grupo.
+     * @param {string[]} participantsJids - Lista de JIDs dos participantes.
+     * @returns {Promise<Object>} Resultado da operação.
+     */
+    async addParticipants(groupId, participantsJids) {
+        this.client._validateConnection();
+        return this.client.sock.groupParticipantsUpdate(groupId, participantsJids, 'add');
+    }
+
+    /**
+     * Promove participantes de um grupo.
+     * @param {string} groupId - O ID do grupo.
+     * @param {string[]} participantsJids - Lista de JIDs dos participantes.
+     * @returns {Promise<Object>} Resultado da operação.
+     */
+    async promoteParticipants(groupId, participantsJids) {
+        this.client._validateConnection();
+        return this.client.sock.groupParticipantsUpdate(groupId, participantsJids, 'promote');
+    }
+
+    /**
+     * Rebaixa participantes de um grupo.
+     * @param {string} groupId - O ID do grupo.
+     * @param {string[]} participantsJids - Lista de JIDs dos participantes.
+     * @returns {Promise<Object>} Resultado da operação.
+     */
+    async demoteParticipants(groupId, participantsJids) {
+        this.client._validateConnection();
+        return this.client.sock.groupParticipantsUpdate(groupId, participantsJids, 'demote');
+    }
+
+    /**
+     * Obtém o código de convite de um grupo.
+     * @param {string} groupId - O ID do grupo.
+     * @returns {Promise<string>} Código de convite do grupo.
+     */
     async getInviteCode(groupId) {
         this.client._validateConnection();
         return this.client.sock.groupInviteCode(groupId);
+    }
+
+    /**
+     * Revoga o código de convite de um grupo.
+     * @param {string} groupId - O ID do grupo.
+     * @returns {Promise<string>} Código de convite do grupo.
+     */
+    async revokeInviteCode(groupId) {
+        this.client._validateConnection();
+        return this.client.sock.groupRevokeInvite(groupId);
     }
 }
 
