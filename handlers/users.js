@@ -66,14 +66,12 @@ class UserHandler {
      * @returns {Promise<object>} - Um objeto contendo as informações do contato.
      */
     async getBusinessProfile(jid) {
-        this.client._validateConnection();
         return await this.client.sock.getBusinessProfile(jid);
     }
 
     /** Obtém a URL da foto de perfil de um usuário ou grupo. */
     async getProfilePicture(jid) {
         try {
-            this.client._validateConnection();
             return await this.client.sock.profilePictureUrl(jid, 'image');
         } catch (error) {
             return null;
@@ -82,44 +80,37 @@ class UserHandler {
 
     /** Verifica se um número está no WhatsApp. Inclusive retorna ID verdadeira para numeros brasileiros com 9 digitos */
     async isOnWhatsApp(number) {
-        this.client._validateConnection();
         const [result] = await this.client.sock.onWhatsApp(number);
         return result;
     }
 
     /** Atualiza o nome do perfil do bot. */
     async updateProfileName(newName) {
-        this.client._validateConnection();
         return await this.client.sock.updateProfileName(newName);
     }
 
     /** Atualiza o recado/status do perfil do bot. */
     async updateProfileStatus(newStatus) {
-        this.client._validateConnection();
         return await this.client.sock.updateProfileStatus(newStatus);
     }
 
     /** Bloqueia um usuário. */
     async block(jid) {
-        this.client._validateConnection();
         return await this.client.sock.updateBlockStatus(jid, 'block');
     }
 
     /** Desbloqueia um usuário. */
     async unblock(jid) {
-        this.client._validateConnection();
         return await this.client.sock.updateBlockStatus(jid, 'unblock');
     }
 
     /** Obtém a lista de contatos bloqueados. */
     async getBlocklist() {
-        this.client._validateConnection();
         return await this.client.sock.fetchBlocklist();
     }
 
     /** Envia uma atualização de presença. Use PresenceStatus */
     async sendPresence(jid, presenceStatus) {
-        this.client._validateConnection();
         return await this.client.sock.sendPresenceUpdate(presenceStatus, jid);
     }
 

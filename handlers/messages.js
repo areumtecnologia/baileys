@@ -241,9 +241,8 @@ class MessageHandler {
     /** Faz o download de mídia de uma mensagem. */
     async getAttachments(message) {
         this.client._validateConnection();
-
-        const type = Object.keys(message.message)[0]; // ex: imageMessage
-        const messageContent = message.message[type];
+        const type = Object.keys(message).find(key => key != "messageContextInfo");
+        const messageContent = message[type];
 
         if (!messageContent?.url) return null;
 

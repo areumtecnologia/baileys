@@ -150,12 +150,16 @@ Informações de perfil e configurações de privacidade.
 Interação com Canais (Newsletters).
 
 -   `getMetadata(id)`: Obtém metadados do canal.
+-   `getAllNewsletters()`: Lista todos os canais que o bot segue.
 -   `follow(id)`: Segue um canal.
 -   `unfollow(id)`: Deixa de seguir.
 -   `mute(jid, duration)` / `unmute(jid)`: Gerencia silenciamento.
 -   `create(name, description, picture)`: Cria um canal próprio.
 -   `delete(jid)`: Deleta um canal.
--   `updateName/Description/Picture`: Atualiza dados do canal.
+-   `updateName(jid, name)`: Atualiza o nome do canal.
+-   `updateDescription(jid, description)`: Atualiza a descrição do canal.
+-   `updatePicture(jid, picture)`: Atualiza a imagem do canal.
+-   `update(jid, { name, description, picture })`: Atualiza múltiplos dados do canal.
 -   `updateReactionMode(jid, mode)`: Define quem pode reagir no canal (ALL, BASIC, NONE).
 
 ### 📞 Chamadas (`client.calls`)

@@ -80,6 +80,7 @@ class Client extends EventEmitter {
         this.environment = options.environment || ['Mac OS', 'Chrome', '144.0.7559.110'];
         this.printQRInTerminal = options.printQRInTerminal || false;
         this.qrCode = null;
+        this.waVersion = options.waVersion || null;
         // =================================================================================================
         //                                     INTEGRAÇÃO DOS HANDLERS
         // =================================================================================================
@@ -105,7 +106,7 @@ class Client extends EventEmitter {
 
         this.sock = makeWASocket({
             auth: state,
-            version,
+            version: this.waVersion ? this.waVersion : version,
             browser: this.environment,
             syncFullHistory: false,
             logger: pino({ level: this.loggerLevel }),
