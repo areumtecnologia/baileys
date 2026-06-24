@@ -11,7 +11,7 @@ Uma biblioteca de alto nível (wrapper) robusta e resiliente para a [Baileys](ht
 
 - 🚀 **Simplificação do Ciclo de Vida**: Conexão auto-gerenciável, tratamento automático de desconexões e reconexão inteligente.
 - 📩 **Estrutura de Mensagens Ricas**: Mensagens recebidas são completamente normalizadas em objetos JavaScript amigáveis, contendo helpers para baixar mídias, verificar menções, respostas, reações e votos.
-- 🛠️ **Handlers Especializados**: Módulos desacoplados para gerenciar Mensagens, Grupos, Contatos, Usuários, Newsletters e Chamadas.
+- 🛠️ **Handlers Especializados**: Módulos desacoplados para gerenciar Mensagens, Grupos, Contatos, Usuários, Newsletters, Chamadas e Status.
 - 🔘 **Mensagens Interativas de Última Geração**: Suporte nativo para construir e enviar botões interativos (`Quick Reply`, `URL`, `Copy Code`, `Call`, `Location`) e menus de lista de seleção única (`List Buttons`).
 - 📂 **Multi-Sessão Nativa**: Persistência de estado de autenticação simplificada e isolamento seguro por sessão.
 
@@ -278,6 +278,19 @@ Permite a interação básica de leitura e criação de Canais do WhatsApp.
 ### 📞 Chamadas (`client.calls`)
 
 -   `reject(call)`: Recusa uma chamada telefônica de voz/vídeo recebida pelo bot.
+
+### 📱 Status (`client.status`)
+
+Responsável por enviar, gerenciar e excluir publicações de Status (Stories) no WhatsApp.
+
+-   `send(jids, content, options)`: Envia uma publicação de status para uma lista de contatos.
+    -   `jids`: Array de JIDs que receberão ou serão mencionados no status.
+    -   `content`: Conteúdo da mensagem a ser enviada (texto, imagem, vídeo, etc.).
+    -   *Opções*:
+        -   `sendMentions` (boolean): Se `true`, realiza a menção no status (limita o array de JIDs a no máximo 5 elementos devido a restrições do WhatsApp).
+        -   `backgroundColor` (string): Cor de fundo para o status de texto (padrão: `'#288d7c85'`).
+        -   `font` (number): Estilo de fonte para o status de texto (padrão: `1`).
+-   `delete(msg)`: Exclui uma publicação de status enviada anteriormente.
 
 ---
 
