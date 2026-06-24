@@ -34,12 +34,53 @@ class ContactHandler {
         const isUser = chatId?.endsWith('@s.whatsapp.net');
         const isGroup = chatId?.endsWith('@g.us');
         const isNewsletter = chatId?.includes('@newsletter');
-        const userBusinessMetadata = isUser ? await this.client.users.getBusinessProfile(chatId) : null;
+
+        let userBusinessMetadata = null;
+        if (isUser) {
+            try {
+                userBusinessMetadata = await this.client.users.getBusinessProfile(chatId);
+            } catch (err) {
+                this.client.logger.warn({ chatId, err: err.message }, 'Falha ao buscar perfil de negócio no normalize');
+            }
+        }
         const isBusiness = !!userBusinessMetadata;
-        const newsletterMetadata = isNewsletter ? await this.client.newsletters.getMetadata(chatId) : null;
-        const groupMetadata = isGroup ? await this.client.groups.getMetadata(chatId) : null;
-        const slogan = await this.client.users.getStatus(chatId);
-        const picture = await this.client.users.getProfilePicture(chatId);
+
+        let newsletterMetadata = null;
+        if (isNewsletter) {
+            try {
+                newsletterMetadata = await this.client.newsletters.getMetadata(chatId);
+            } catch (err) {
+                this.client.logger.warn({ chatId, err: err.message }, 'Falha ao buscar metadados de newsletter no normalize');
+            }
+        }
+
+        let groupMetadata = null;
+        if (isGroup) {
+            try {
+                groupMetadata = await this.client.groups.getMetadata(chatId);
+            } catch (err) {
+                this.client.logger.warn({ chatId, err: err.message }, 'Falha ao buscar metadados de grupo no normalize');
+            }
+        }
+
+        let slogan = null;
+        if (chatId) {
+            try {
+                slogan = await this.client.users.getStatus(chatId);
+            } catch (err) {
+                // Falhas ao obter status do contato são comuns e podem ser ignoradas
+            }
+        }
+
+        let picture = null;
+        if (chatId) {
+            try {
+                picture = await this.client.users.getProfilePicture(chatId);
+            } catch (err) {
+                // Falhas ao obter foto de perfil também podem ser ignoradas
+            }
+        }
+
         const description = isNewsletter ? newsletterMetadata?.thread_metadata?.description?.text : isGroup ? groupMetadata?.description : isBusiness ? userBusinessMetadata?.description : null;
         const from = fromMe ? clientJid : chatId;
         const to = fromMe ? chatId : clientJid;

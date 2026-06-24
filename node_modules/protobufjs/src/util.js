@@ -11,15 +11,18 @@ var roots = require("./roots");
 var Type, // cyclic
     Enum;
 
-util.codegen = require("@protobufjs/codegen");
-util.fetch   = require("@protobufjs/fetch");
-util.path    = require("@protobufjs/path");
+util.codegen  = require("./util/codegen");
+util.fetch    = require("./util/fetch");
+util.path     = require("./util/path");
+util.patterns = require("./util/patterns");
+
+var reservedRe = util.patterns.reservedRe;
 
 /**
  * Node's fs module if available.
  * @type {Object.<string,*>}
  */
-util.fs = util.inquire("fs");
+util.fs = require("./util/fs");
 
 /**
  * Converts an object's values to an array.
@@ -55,8 +58,27 @@ util.toObject = function toObject(array) {
     return object;
 };
 
-var safePropBackslashRe = /\\/g,
-    safePropQuoteRe     = /"/g;
+/**
+ * Removes the first matching value from an object.
+ * @param {Object.<string,*>|undefined} object Object to remove from
+ * @param {*} value Value to remove
+ * @param {string} [key] Optional key for fast path removal
+ * @returns {boolean} `true` if removed, otherwise `false`
+ */
+util.remove = function remove(object, value, key) {
+    if (!object)
+        return false;
+    if (key !== undefined && Object.prototype.hasOwnProperty.call(object, key) && object[key] === value) {
+        delete object[key];
+        return true;
+    }
+    for (var names = Object.keys(object), i = 0; i < names.length; ++i)
+        if (object[names[i]] === value) {
+            delete object[names[i]];
+            return true;
+        }
+    return false;
+};
 
 /**
  * Tests whether the specified name is a reserved word in JS.
@@ -64,7 +86,7 @@ var safePropBackslashRe = /\\/g,
  * @returns {boolean} `true` if reserved, otherwise `false`
  */
 util.isReserved = function isReserved(name) {
-    return /^(?:do|if|in|for|let|new|try|var|case|else|enum|eval|false|null|this|true|void|with|break|catch|class|const|super|throw|while|yield|delete|export|import|public|return|static|switch|typeof|default|extends|finally|package|private|continue|debugger|function|arguments|interface|protected|implements|instanceof)$/.test(name);
+    return reservedRe.test(name);
 };
 
 /**
@@ -73,8 +95,8 @@ util.isReserved = function isReserved(name) {
  * @returns {string} Safe accessor
  */
 util.safeProp = function safeProp(prop) {
-    if (!/^[$\w_]+$/.test(prop) || util.isReserved(prop))
-        return "[\"" + prop.replace(safePropBackslashRe, "\\\\").replace(safePropQuoteRe, "\\\"") + "\"]";
+    if (!/^[$\w_]+$/.test(prop) || reservedRe.test(prop))
+        return "[" + JSON.stringify(prop) + "]";
     return "." + prop;
 };
 
@@ -93,11 +115,34 @@ var camelCaseRe = /_([a-z])/g;
  * Converts a string to camel case.
  * @param {string} str String to convert
  * @returns {string} Converted string
+ * @deprecated Use {@link util.jsonName} for protobuf field JSON names.
  */
 util.camelCase = function camelCase(str) {
     return str.substring(0, 1)
          + str.substring(1)
                .replace(camelCaseRe, function($0, $1) { return $1.toUpperCase(); });
+};
+
+/**
+ * Converts a proto field name to its protoc-compatible JSON name.
+ * @param {string} str Proto field name
+ * @returns {string} JSON name
+ */
+util.jsonName = function jsonName(str) {
+    var result = "",
+        upperNext = false,
+        i = 0;
+    for (; i < str.length; ++i) {
+        var ch = str.charAt(i);
+        if (ch === "_")
+            upperNext = true;
+        else if (upperNext) {
+            result += ch.toUpperCase();
+            upperNext = false;
+        } else
+            result += ch;
+    }
+    return result;
 };
 
 /**
@@ -117,6 +162,7 @@ util.compareFieldsById = function compareFieldsById(a, b) {
  * @returns {Type} Reflected type
  * @template T extends Message<T>
  * @property {Root} root Decorators root
+ * @deprecated Legacy TypeScript decorator support. Will be removed in a future release.
  */
 util.decorateType = function decorateType(ctor, typeName) {
 
@@ -148,6 +194,7 @@ var decorateEnumIndex = 0;
  * Decorator helper for enums (TypeScript).
  * @param {Object} object Enum object
  * @returns {Enum} Reflected enum
+ * @deprecated Legacy TypeScript decorator support. Will be removed in a future release.
  */
 util.decorateEnum = function decorateEnum(object) {
 
@@ -177,9 +224,8 @@ util.decorateEnum = function decorateEnum(object) {
 util.setProperty = function setProperty(dst, path, value, ifNotSet) {
     function setProp(dst, path, value) {
         var part = path.shift();
-        if (part === "__proto__" || part === "prototype") {
-          return dst;
-        }
+        if (util.isUnsafeProperty(part))
+            return dst;
         if (path.length > 0) {
             dst[part] = setProp(dst[part] || {}, path, value);
         } else {
@@ -199,6 +245,8 @@ util.setProperty = function setProperty(dst, path, value, ifNotSet) {
         throw TypeError("path must be specified");
 
     path = path.split(".");
+    if (path.length > util.recursionLimit)
+        throw Error("max depth exceeded");
     return setProp(dst, path, value);
 };
 
@@ -207,6 +255,7 @@ util.setProperty = function setProperty(dst, path, value, ifNotSet) {
  * @name util.decorateRoot
  * @type {Root}
  * @readonly
+ * @deprecated Legacy TypeScript decorator support. Will be removed in a future release.
  */
 Object.defineProperty(util, "decorateRoot", {
     get: function() {

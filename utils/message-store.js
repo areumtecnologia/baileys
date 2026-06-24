@@ -1,11 +1,13 @@
-const fs = require('fs');
+const fs = require('fs/promises');
+const { existsSync } = require('fs');
 const path = require('path');
 
 class MessageStore {
     constructor(basePath) {
         this.basePath = path.join(basePath, 'message_store');
-        if (!fs.existsSync(this.basePath)) {
-            fs.mkdirSync(this.basePath, { recursive: true });
+        if (!existsSync(this.basePath)) {
+            const fsSync = require('fs');
+            fsSync.mkdirSync(this.basePath, { recursive: true });
         }
     }
 
@@ -13,40 +15,44 @@ class MessageStore {
         return path.join(this.basePath, `${chatId}.json`);
     }
 
-    _loadMessages(chatId) {
+    async _loadMessages(chatId) {
         const filePath = this._getFilePath(chatId);
-        if (!fs.existsSync(filePath)) return [];
         try {
-            return JSON.parse(fs.readFileSync(filePath, 'utf8')) || [];
+            await fs.access(filePath);
+        } catch {
+            return [];
+        }
+        try {
+            const data = await fs.readFile(filePath, 'utf8');
+            return JSON.parse(data) || [];
         } catch (err) {
-            console.error("Erro ao ler mensagens:", err);
+            // Em caso de JSON corrompido, retorna lista vazia
             return [];
         }
     }
 
-    _saveMessages(chatId, messages) {
+    async _saveMessages(chatId, messages) {
         const filePath = this._getFilePath(chatId);
-        fs.writeFileSync(filePath, JSON.stringify(messages, null, 2));
+        await fs.writeFile(filePath, JSON.stringify(messages, null, 2));
     }
 
-    saveMessage(chatId, message) {
-        const messages = this._loadMessages(chatId);
+    async saveMessage(chatId, message) {
+        const messages = await this._loadMessages(chatId);
 
         // Evita duplicados pelo id
         if (!messages.find(m => m.id === message.id)) {
             messages.push(message);
-            this._saveMessages(chatId, messages);
+            await this._saveMessages(chatId, messages);
         }
     }
 
-
-    getMessage(chatId, id) {
-        const messages = this._loadMessages(chatId);
+    async getMessage(chatId, id) {
+        const messages = await this._loadMessages(chatId);
         return messages.find(m => m.id === id);
     }
 
-    getMessages(chatId, { from, to, limit } = {}) {
-        let messages = this._loadMessages(chatId);
+    async getMessages(chatId, { from, to, limit } = {}) {
+        let messages = await this._loadMessages(chatId);
 
         if (from || to) {
             messages = messages.filter(msg => {

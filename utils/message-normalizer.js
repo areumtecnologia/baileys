@@ -21,7 +21,7 @@ class MessageNormalizer {
         const editedMsgContent = rawMessage.message?.protocolMessage?.editedMessage;
         if (editedMsgContent) {
             const originalKey = rawMessage.message.protocolMessage.key;
-            const normalizedEdit = this.normalize({ key: originalKey, message: editedMsgContent, pushName: rawMessage.pushName }, client);
+            const normalizedEdit = await this.normalize(contact, { key: originalKey, message: editedMsgContent, pushName: rawMessage.pushName }, client);
             if (normalizedEdit) {
                 normalizedEdit.isEdited = true;
                 normalizedEdit.id = originalKey.id; // Garante que o ID é o da mensagem original
@@ -74,12 +74,17 @@ class MessageNormalizer {
                 key: {
                     remoteJid: normalized.chat.id,
                     id: contextInfo.stanzaId,
-                    fromMe: client.jidNormalizedUser(contextInfo.participant) === clientJid,
+                    fromMe: client.jidNormalizedUser(contextInfo.participant || normalized.chat.id) === clientJid,
                     participant: contextInfo.participant
                 },
                 message: contextInfo.quotedMessage
             };
-            normalized.quotedMessage = this.normalize(quotedRaw, client);
+            const quotedParticipantJid = client.jidNormalizedUser(contextInfo.participant || normalized.chat.id);
+            let quotedContact = await client.contacts.get(quotedParticipantJid);
+            if (!quotedContact) {
+                quotedContact = await client.contacts.normalize({ key: { remoteJid: quotedParticipantJid } });
+            }
+            normalized.quotedMessage = await this.normalize(quotedContact, quotedRaw, client);
         }
 
 

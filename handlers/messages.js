@@ -18,6 +18,8 @@
  * await handler.sendTextMessage('5511999999999@s.whatsapp.net', 'Olá!');
  */
 
+const fs = require('fs/promises');
+const path = require('path');
 const { Utils, MessageNormalizer } = require('../utils');
 
 class MessageHandler {
@@ -33,28 +35,33 @@ class MessageHandler {
      * @private
      */
     async sendMessage(jid, content, options = {}) {
-        this.client._validateConnection();
-        const verifiedJid = jid.endsWith('@g.us') || jid.endsWith('@broadcast') || jid.endsWith('@newsletter') ? { jid, exists: true } : await this.client.users.isOnWhatsApp(jid);
-        if (verifiedJid && verifiedJid.exists) {
-            if (options.composing) {
-                this.client.sock.sendPresenceUpdate('composing', verifiedJid.jid);
-                await new Promise(r => setTimeout(() => r(true), options.composing?.timeout));
+        try {
+            this.client._validateConnection();
+            const verifiedJid = jid.endsWith('@g.us') || jid.endsWith('@broadcast') || jid.endsWith('@newsletter') ? { jid, exists: true } : await this.client.users.isOnWhatsApp(jid);
+            if (verifiedJid && verifiedJid.exists) {
+                if (options.composing) {
+                    this.client.sock.sendPresenceUpdate('composing', verifiedJid.jid);
+                    await new Promise(r => setTimeout(() => r(true), options.composing?.timeout));
+                }
+                if (options.recording) {
+                    this.client.sock.sendPresenceUpdate('recording', verifiedJid.jid);
+                    await new Promise(r => setTimeout(() => r(true), options.recording?.timeout));
+                }
+                const msg = await this.client.sock.sendMessage(verifiedJid.jid, content, options);
+                const c = await this.client.contacts.normalize({ key: { remoteJid: verifiedJid.jid } });
+                const nmsg = await MessageNormalizer.normalize(c, msg, this.client);
+                return nmsg;
             }
-            if (options.recording) {
-                this.client.sock.sendPresenceUpdate('recording', verifiedJid.jid);
-                await new Promise(r => setTimeout(() => r(true), options.recording?.timeout));
+            else {
+                if (verifiedJid) {
+                    return verifiedJid;
+                }
+                // Se verifiedJid e undefined ou null cria objeto padrao
+                return { error: { exists: false, message: "WA_NUMBER_NOT_FOUNDED" } };
             }
-            const msg = await this.client.sock.sendMessage(verifiedJid.jid, content, options);
-            const c = await this.client.contacts.normalize({ key: { remoteJid: verifiedJid.jid } });
-            const nmsg = await MessageNormalizer.normalize(c, msg, this.client);
-            return nmsg;
-        }
-        else {
-            if (verifiedJid) {
-                return verifiedJid;
-            }
-            // Se verifiedJid e undefined ou null cria objeto padrao
-            return { error: { exists: false, message: "WA_NUMBER_NOT_FOUNDED" } };
+        } catch (error) {
+            this.client.logger.error({ jid, err: error.message }, 'Erro ao enviar mensagem');
+            return { error: { exists: false, message: "SEND_MESSAGE_FAILED", details: error.message } };
         }
     }
 
@@ -276,13 +283,11 @@ class MessageHandler {
         };
 
         const toImageUrl = () => {
-            const blob = toBlob();
-            return URL.createObjectURL(blob);
+            throw new Error('toImageUrl() não é suportada em ambiente Node.js.');
         };
 
         const toImageBitmap = async () => {
-            const blob = toBlob();
-            return await createImageBitmap(blob);
+            throw new Error('toImageBitmap() não é suportada em ambiente Node.js.');
         };
 
         const toStream = () => {
@@ -300,12 +305,13 @@ class MessageHandler {
             return await fileTypeFromBuffer(buffer);
         };
 
-        const save = async (path) => {
+        const save = async (destPath) => {
             const filename = `${message.from}-${Date.now()}.${extension}`;
-            const filepath = path
-                ? path
+            const filepath = destPath
+                ? destPath
                 : `${this.client.sessionPath}/media/${filename}`;
 
+            await fs.mkdir(path.dirname(filepath), { recursive: true });
             await fs.writeFile(filepath, buffer);
 
             return { filename, filepath };

@@ -28,6 +28,7 @@ const CallHandler = require('./handlers/calls');
 const NewsletterHandler = require('./handlers/newsletters');
 const { UserHandler, PresenceStatus } = require('./handlers/users');
 const ContactHandler = require('./handlers/contacts');
+const StatusHandler = require('./handlers/status');
 
 const { MessageNormalizer, MessageStore } = require('./utils');
 const { InteractiveMessage, CallButton, CopyCodeButton, ListButton, ListRow, ListSection, QuickReplyButton, UrlButton, LocationButton } = require('./types/interactive-messages');
@@ -74,13 +75,14 @@ class Client extends EventEmitter {
         this.manualDisconnect = false;
         this.receivedPendingNotifications = false;
         this.loggerLevel = options.loggerLevel || "error";
+        this.logger = pino({ level: this.loggerLevel });
         this.restartOnClose = options.restartOnClose || false;
         this.status = ClientEvent.DISCONNECTED;
         this.markOnlineOnConnect = options.markOnlineOnConnect || false;
         this.environment = options.environment || ['Mac OS', 'Chrome', '144.0.7559.110'];
         this.printQRInTerminal = options.printQRInTerminal || false;
         this.qrCode = null;
-        this.waVersion = options.waVersion || null;
+        this.waVersion = options.waVersion || [2, 3000, 1038819500];
         // =================================================================================================
         //                                     INTEGRAÇÃO DOS HANDLERS
         // =================================================================================================
@@ -92,6 +94,7 @@ class Client extends EventEmitter {
         this.newsletters = new NewsletterHandler(this);
         this.contacts = new ContactHandler(this);
         this.messages = new MessageHandler(this);
+        this.status = new StatusHandler(this);
     }
 
     /**
@@ -103,13 +106,13 @@ class Client extends EventEmitter {
         this.status = ClientEvent.INIT;
         const { state, saveCreds } = await useMultiFileAuthState(this.sessionPath);
         const { version } = await fetchLatestBaileysVersion();
-
+        this.waVersion = this.waVersion || version
         this.sock = makeWASocket({
             auth: state,
-            version: this.waVersion ? this.waVersion : version,
+            version: this.waVersion,
             browser: this.environment,
             syncFullHistory: false,
-            logger: pino({ level: this.loggerLevel }),
+            logger: this.logger,
             markOnlineOnConnect: this.markOnlineOnConnect || false,
             keepAliveIntervalMs: 20000,
             connectTimeoutMs: 30000,
@@ -240,11 +243,6 @@ class Client extends EventEmitter {
                             shouldReconnect = false;
                             break;
 
-                        /** 🌐 Serviço indisponível (503) */
-                        case DisconnectReason.unavailableService:
-                            statusType = DisconnectReasons.SERVICE_UNAVAILABLE;
-                            shouldReconnect = true;
-                            break;
 
                         /** 🧩 Incompatibilidade Multi-Device (418)*/
                         case DisconnectReason.multideviceMismatch:
@@ -252,7 +250,17 @@ class Client extends EventEmitter {
                             shouldReconnect = false;
                             break;
 
-                        /** ⏱ Timeout (408) */
+                        case 405:
+                            statusType = DisconnectReasons.UNAUTHORIZED;
+                            shouldReconnect = false;
+                            try {
+                                await fs.rm(this.sessionPath, { recursive: true, force: true });
+                            } catch (error) {
+                                this.logger.error(`Erro ao remover sessão: ${error}`);
+                            }
+                            break;
+
+                        /** ⏱ Timeout (408) - Exemplo: Leitura de QrCode expirada*/
                         case DisconnectReason.timedOut:
                             statusType = DisconnectReasons.TIMEOUT;
                             shouldReconnect = this.status === ClientEvent.PAIRING_CODE ? false : true;
@@ -262,6 +270,12 @@ class Client extends EventEmitter {
                         case DisconnectReason.connectionLost:
                         case DisconnectReason.connectionClosed:
                             statusType = DisconnectReasons.CONNECTION_LOST;
+                            shouldReconnect = true;
+                            break;
+
+                        /** 🌐 Serviço indisponível (503) */
+                        case DisconnectReason.unavailableService:
+                            statusType = DisconnectReasons.SERVICE_UNAVAILABLE;
                             shouldReconnect = true;
                             break;
 
@@ -281,7 +295,7 @@ class Client extends EventEmitter {
 
                     this.status = ClientEvent.DISCONNECTED;
                     this.emit(ClientEvent.DISCONNECTED, disconnectReason);
-                    this.emit(ClientEvent.STATUS_CHANGE, this.status);
+                    this.emit(ClientEvent.STATUS_CHANGE, this.status, disconnectReason);
 
                     if (shouldReconnect && this.restartOnClose && !this.manualDisconnect) {
                         try {
@@ -376,8 +390,7 @@ class Client extends EventEmitter {
         this.sock.ev.on('chats.delete', (event) => this.emit(ClientEvent.CHAT_DELETE, event));
 
         this.sock.ev.on('messaging-history.set', async ({ chats, contacts, messages, isLatest, syncType }) => {
-            console.log(`Recebidos ${chats.length} chats e ${contacts.length} contatos.`);
-            console.log(`Tipo de sincronização: ${syncType}`);
+            this.logger.info({ chats: chats.length, contacts: contacts.length, syncType }, 'Sincronização de histórico recebida');
             try {
                 // Normaliza os contatos
                 for (const contact of contacts) {
@@ -394,10 +407,16 @@ class Client extends EventEmitter {
                     if (c && c.id && c.name && c.id !== this.user?.id) {
                         this.contacts.set(c.id, c);
                     }
-                    const messages = messages.filter(m => m.key.remoteJid === chatId);
-                    for (const msg of messages) {
-                        const nmsg = MessageNormalizer.normalize(c, msg, this);
-                        if (nmsg && this.store && this.store?.setMessage) this.store?.setMessage(chatId, nmsg);
+                    const chatMessages = messages.filter(m => m.key.remoteJid === chatId);
+                    for (const msg of chatMessages) {
+                        const nmsg = await MessageNormalizer.normalize(c, msg, this);
+                        if (nmsg && this.store) {
+                            if (this.store.saveMessage) {
+                                await this.store.saveMessage(chatId, nmsg);
+                            } else if (this.store.setMessage) {
+                                await this.store.setMessage(chatId, nmsg);
+                            }
+                        }
                     }
                 }
                 this.emit(ClientEvent.MESSAGES_HISTORY_SYNC_DONE, { chats, contacts, messages, isLatest, syncType });
@@ -425,8 +444,12 @@ class Client extends EventEmitter {
                         this.emit(ClientEvent.BROADCAST_MESSAGE, msg);
                     } else {
                         const nmsg = await MessageNormalizer.normalize(contact, msg, this);
-                        if (nmsg && this.store && this.store?.setMessage) {
-                            this.store?.setMessage(nmsg.chatId, nmsg);
+                        if (nmsg && this.store) {
+                            if (this.store.saveMessage) {
+                                await this.store.saveMessage(nmsg.chatId, nmsg);
+                            } else if (this.store.setMessage) {
+                                await this.store.setMessage(nmsg.chatId, nmsg);
+                            }
                         }
                         // Mensagens de conversacao
                         switch (type) {
@@ -575,6 +598,17 @@ class ClientEvent {
     static MESSAGES_HISTORY_SYNC_DONE = 'messages_history_sync_done';
     static BROADCAST_MESSAGE = 'broadcast_message';
     static NOTIFICATION = 'notification';
+}
+
+class SessionStatus {
+    static CONNECTING = 'connecting';
+    static PAIRING_CODE = 'pairing_code';
+    static PAIRING_SUCCESS = 'pairing_success';
+    static PAIRING_FAILED = 'pairing_failed';
+    static LOGGED_OUT = 'logged_out';
+    static CONNECTED = 'connected';
+    static DISCONNECTED = 'disconnected';
+
 }
 
 /**
