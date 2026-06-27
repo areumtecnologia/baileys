@@ -95,6 +95,49 @@ Ao instanciar a classe `Client`, você pode customizar o comportamento da conex�
 
 ---
 
+## 🛠️ Métodos do Cliente (`Client`)
+
+A classe `Client` disponibiliza diversos métodos principais para gerenciar o ciclo de vida da conexão, obter informações do bot e realizar operações auxiliares:
+
+- **`connect()`**:
+  - **Retorno**: `Promise<void>`
+  - **Descrição**: Inicializa as credenciais de autenticação da sessão, configura o socket e inicia a conexão aos servidores do WhatsApp. Gerencia reconexões e novas tentativas de pareamento automaticamente.
+- **`disconnect()`**:
+  - **Retorno**: `void`
+  - **Descrição**: Encerra a conexão socket ativa com o WhatsApp de forma limpa, definindo internamente a flag de desconexão manual para evitar novas conexões automáticas. Não apaga credenciais locais.
+- **`logout()`**:
+  - **Retorno**: `Promise<void>`
+  - **Descrição**: Realiza o logout da conta conectada no WhatsApp e encerra o socket de conexão, invalidando a sessão.
+- **`itsMe()`**:
+  - **Retorno**: `Promise<object>`
+  - **Descrição**: Retorna o perfil normalizado do próprio bot conectado (contendo informações de perfil, grupos e newsletters participantes).
+- **`composing(jid, ts)`**:
+  - **Parâmetros**: `jid` (string), `ts` (number)
+  - **Retorno**: `Promise<void>`
+  - **Descrição**: Aciona visualmente o estado "digitando..." para o destinatário especificado pelo `jid`.
+- **`getMessages(jid, limit)`**:
+  - **Parâmetros**: `jid` (string), `limit` (number, padrão `50`)
+  - **Retorno**: `Promise<Array>`
+  - **Descrição**: Recupera o histórico local ou remoto de mensagens brutas associadas a um chat.
+- **`decryptPollVote(vote, voteParams)`**:
+  - **Parâmetros**: `vote` (object), `voteParams` (object)
+  - **Retorno**: `Promise<object>`
+  - **Descrição**: Descriptografa votos recebidos em enquetes.
+- **`jidNormalizedUser(id)`**:
+  - **Parâmetros**: `id` (string)
+  - **Retorno**: `string`
+  - **Descrição**: Normaliza e unifica IDs do WhatsApp, removendo identificadores secundários de múltiplos dispositivos.
+- **`downloadContentFromMessage(content, type)`**:
+  - **Parâmetros**: `content` (object), `type` (string)
+  - **Retorno**: `Promise<Buffer>`
+  - **Descrição**: Efetua o download binário de um anexo ou mídia de uma mensagem bruta.
+- **`getContentType(message)`**:
+  - **Parâmetros**: `message` (object)
+  - **Retorno**: `string`
+  - **Descrição**: Retorna o tipo de conteúdo de uma mensagem bruta (ex: `text`, `image`).
+
+---
+
 ## 🔔 Eventos (`ClientEvent`)
 
 A classe `Client` herda do `EventEmitter` do Node.js e emite eventos semânticos correspondentes ao ciclo de vida da aplicação:
