@@ -1,4 +1,4 @@
-.baileys/
+data/
 tests/
 *.code-workspace
 node_modules

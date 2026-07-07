@@ -190,6 +190,22 @@ class GroupHandler {
         this.client._validateConnection();
         return this.client.sock.groupRevokeInvite(groupId);
     }
+
+    /**
+     * Define a etiqueta de membro própria no grupo especificado.
+     * @param {string} groupId - O ID do grupo.
+     * @param {string} label - A etiqueta/papel do membro no grupo (máximo 30 caracteres).
+     * @returns {Promise<object>} O resultado da operação.
+     */
+    async updateMemberLabel(groupId, label) {
+        this.client._validateConnection();
+        try {
+            return await this.client.sock.updateMemberLabel(groupId, label);
+        } catch (error) {
+            this.client.logger.error({ groupId, label, err: error.message }, 'Erro ao atualizar etiqueta de membro do grupo');
+            throw new Error(`Erro ao atualizar etiqueta de membro do grupo: ${error.message}`, { cause: error });
+        }
+    }
 }
 
 module.exports = GroupHandler;

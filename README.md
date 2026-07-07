@@ -1,6 +1,6 @@
-# @areumtecnologia/baileys
+# @areumtecnologia/unitychat
 
-[![npm version](https://img.shields.io/npm/v/@areumtecnologia/baileys.svg)](https://www.npmjs.com/package/@areumtecnologia/baileys)
+[![npm version](https://img.shields.io/npm/v/@areumtecnologia/unitychat.svg)](https://www.npmjs.com/package/@areumtecnologia/unitychat)
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC)
 
 Uma biblioteca de alto nível (wrapper) robusta e resiliente para a [Baileys](https://github.com/WhiskeySockets/Baileys). Facilita a criação e o gerenciamento de conexões com o WhatsApp, oferecendo uma arquitetura baseada em eventos unificados, normalização de mensagens para estruturas ricas e handlers especializados para simplificar a lógica de negócio do seu bot.
@@ -11,7 +11,7 @@ Uma biblioteca de alto nível (wrapper) robusta e resiliente para a [Baileys](ht
 
 - 🚀 **Simplificação do Ciclo de Vida**: Conexão auto-gerenciável, tratamento automático de desconexões e reconexão inteligente.
 - 📩 **Estrutura de Mensagens Ricas**: Mensagens recebidas são completamente normalizadas em objetos JavaScript amigáveis, contendo helpers para baixar mídias, verificar menções, respostas, reações e votos.
-- 🛠️ **Handlers Especializados**: Módulos desacoplados para gerenciar Mensagens, Grupos, Contatos, Usuários, Newsletters, Chamadas e Status.
+- 🛠️ **Handlers Especializados**: Módulos desacoplados para gerenciar Mensagens, Grupos, Contatos, Usuários, Newsletters, Chamadas e Stories.
 - 🔘 **Mensagens Interativas de Última Geração**: Suporte nativo para construir e enviar botões interativos (`Quick Reply`, `URL`, `Copy Code`, `Call`, `Location`) e menus de lista de seleção única (`List Buttons`).
 - 📂 **Multi-Sessão Nativa**: Persistência de estado de autenticação simplificada e isolamento seguro por sessão.
 
@@ -22,7 +22,7 @@ Uma biblioteca de alto nível (wrapper) robusta e resiliente para a [Baileys](ht
 Instale o pacote através do npm:
 
 ```bash
-npm install @areumtecnologia/baileys
+npm install @areumtecnologia/unitychat
 ```
 
 ---
@@ -32,22 +32,22 @@ npm install @areumtecnologia/baileys
 Aqui está um exemplo básico de como inicializar o cliente, escutar eventos e interagir com mensagens:
 
 ```javascript
-const { Client, ClientEvent } = require('@areumtecnologia/baileys');
+const { UnityChat, Events } = require('@areumtecnologia/unitychat');
 
 // Inicializa o cliente com configurações personalizadas
-const client = new Client({
+const client = new UnityChat({
     sessionName: 'sessao-suporte',
     printQRInTerminal: true,
     restartOnClose: true
 });
 
 // Evento disparado quando a conexão com o WhatsApp está pronta
-client.on(ClientEvent.CONNECTED, (user) => {
+client.on(Events.CONNECTED, (user) => {
     console.log(`✅ Conectado com sucesso como: ${user.name} (${user.id})`);
 });
 
 // Escuta novas mensagens recebidas
-client.on(ClientEvent.MESSAGE_RECEIVED, async (message) => {
+client.on(Events.MESSAGE_RECEIVED, async (message) => {
     console.log(`📩 Nova mensagem de ${message.fromPushName} (${message.from}): ${message.body}`);
 
     // Exemplo de resposta simples
@@ -67,7 +67,7 @@ client.on(ClientEvent.MESSAGE_RECEIVED, async (message) => {
 });
 
 // Trata erros ou desconexões inesperadas
-client.on(ClientEvent.ERROR, (error) => {
+client.on(Events.ERROR, (error) => {
     console.error('❌ Ocorreu um erro no cliente:', error);
 });
 
@@ -79,12 +79,12 @@ client.connect();
 
 ## ⚙️ Opções de Configuração
 
-Ao instanciar a classe `Client`, você pode customizar o comportamento da conexão passando as seguintes opções no construtor:
+Ao instanciar a classe `UnityChat`, você pode customizar o comportamento da conexão passando as seguintes opções no construtor:
 
 | Opção | Tipo | Padrão | Descrição |
 | :--- | :--- | :--- | :--- |
 | `sessionName` | `string` | `'session'` | Identificador único da sessão para isolar dados de autenticação. |
-| `dataPath` | `string` | `'.baileys/sessions'` | Caminho base onde as credenciais das sessões serão persistidas. |
+| `dataPath` | `string` | `'data/sessions'` | Caminho base onde as credenciais das sessões serão persistidas. |
 | `printQRInTerminal` | `boolean` | `false` | Se `true`, imprime o QR code para autenticação diretamente no console. |
 | `loggerLevel` | `string` | `'error'` | Nível do log interno (ex: `'debug'`, `'info'`, `'warn'`, `'error'`). |
 | `restartOnClose` | `boolean` | `false` | Tenta restabelecer a conexão automaticamente caso ocorra uma queda de rede/serviço. |
@@ -95,9 +95,9 @@ Ao instanciar a classe `Client`, você pode customizar o comportamento da conex�
 
 ---
 
-## 🛠️ Métodos do Cliente (`Client`)
+## 🛠️ Métodos do Cliente (`UnityChat`)
 
-A classe `Client` disponibiliza diversos métodos principais para gerenciar o ciclo de vida da conexão, obter informações do bot e realizar operações auxiliares:
+A classe `UnityChat` disponibiliza diversos métodos principais para gerenciar o ciclo de vida da conexão, obter informações do bot e realizar operações auxiliares:
 
 - **`connect()`**:
   - **Retorno**: `Promise<void>`
@@ -123,6 +123,14 @@ A classe `Client` disponibiliza diversos métodos principais para gerenciar o ci
   - **Parâmetros**: `vote` (object), `voteParams` (object)
   - **Retorno**: `Promise<object>`
   - **Descrição**: Descriptografa votos recebidos em enquetes.
+- **`getAggregateVotesInPollMessage(pollParams)`**:
+  - **Parâmetros**: `pollParams` (object)
+  - **Retorno**: `Promise<object>`
+  - **Descrição**: Agrega e contabiliza os votos descriptografados de uma enquete.
+- **`getAggregateResponsesInEventMessage(eventParams)`**:
+  - **Parâmetros**: `eventParams` (object)
+  - **Retorno**: `Promise<object>`
+  - **Descrição**: Analisa e decodifica as presenças/respostas a um evento criado no chat.
 - **`jidNormalizedUser(id)`**:
   - **Parâmetros**: `id` (string)
   - **Retorno**: `string`
@@ -138,9 +146,9 @@ A classe `Client` disponibiliza diversos métodos principais para gerenciar o ci
 
 ---
 
-## 🔔 Eventos (`ClientEvent`)
+## 🔔 Eventos (`Events`)
 
-A classe `Client` herda do `EventEmitter` do Node.js e emite eventos semânticos correspondentes ao ciclo de vida da aplicação:
+A classe `UnityChat` herda do `EventEmitter` do Node.js e emite eventos semânticos correspondentes ao ciclo de vida da aplicação:
 
 ### Ciclo de Conexão e Autenticação
 -   `init`: Iniciando o processo de carregamento de credenciais.
@@ -162,11 +170,12 @@ A classe `Client` herda do `EventEmitter` do Node.js e emite eventos semânticos
 -   `notification`: Notificação interna de sistema ou protocolo.
 
 ### Outros Recursos
--   `call`: Nova chamada de voz/vídeo recebida pelo número.
+-   `incoming_call`: Nova chamada de voz/vídeo recebida pelo número.
 -   `presence_update`: Mudança no status de presença de contatos (digitando, gravando, online).
 -   `contacts_upsert` / `contacts_update`: Atualizações na lista ou metadados de contatos.
 -   `groups_upsert` / `groups_update`: Criação ou alteração de informações nos grupos participantes.
 -   `group_participants_update`: Mudanças nos membros de um grupo (entrada, saída, promoções).
+-   `group_member_tag_update`: Atualização de etiquetas/papéis dos membros do grupo.
 -   `blocklist_update`: Atualização na lista de contatos bloqueados.
 -   `chat_update` / `chat_delete`: Modificações em chats locais da conta.
 
@@ -277,6 +286,7 @@ Contém as operações de criação, modificação de metadados e moderação de
 -   `demoteParticipants(groupId, participantsJids)`: Retira os privilégios de administrador de membros específicos.
 -   `getInviteCode(groupId)`: Retorna o sufixo alfanumérico do link de convite do grupo.
 -   `revokeInviteCode(groupId)`: Invalida o código/link de convite antigo e gera um novo.
+-   `updateMemberLabel(groupId, label)`: Define a etiqueta/papel de membro próprio do bot no grupo.
 
 ### 👤 Usuários e Contatos (`client.users` e `client.contacts`)
 
@@ -295,6 +305,9 @@ Handlers focados no gerenciamento de contatos, privacidade e metadados de contas
 -   `block(jid)` / `unblock(jid)`: Bloqueia ou desbloqueia um contato.
 -   `getBlocklist()`: Retorna todos os contatos bloqueados pela conta do bot.
 -   `sendPresence(jid, presenceStatus)`: Atualiza a presença visível do bot em relação a um chat (valores do `PresenceStatus`: `'available'`, `'unavailable'`, `'composing'`, `'recording'`).
+-   `updateLastSeenPrivacy(value)`: Atualiza configuração de privacidade do Visto por Último (`'all' | 'contacts' | 'contact_blacklist' | 'none'`).
+-   `updateOnlinePrivacy(value)`: Atualiza configuração de privacidade do Visto Online (`'all' | 'match_last_seen'`).
+-   `updateReadReceiptsPrivacy(value)`: Atualiza configuração de privacidade das confirmações de leitura (`'all' | 'none'`).
 
 #### `client.contacts`
 -   `get(jid)`: Recupera um contato diretamente do cache local em memória.
@@ -322,18 +335,44 @@ Permite a interação básica de leitura e criação de Canais do WhatsApp.
 
 -   `reject(call)`: Recusa uma chamada telefônica de voz/vídeo recebida pelo bot.
 
-### 📱 Status (`client.status`)
+### 📱 Stories (`client.stories`)
 
-Responsável por enviar, gerenciar e excluir publicações de Status (Stories) no WhatsApp.
+Responsável por enviar, gerenciar e excluir publicações de Stories (Status) no WhatsApp.
 
--   `send(jids, content, options)`: Envia uma publicação de status para uma lista de contatos.
-    -   `jids`: Array de JIDs que receberão ou serão mencionados no status.
+-   `send(jids, content, options)`: Envia uma publicação de stories para uma lista de contatos.
+    -   `jids`: Array de JIDs que receberão ou serão mencionados nos stories.
     -   `content`: Conteúdo da mensagem a ser enviada (texto, imagem, vídeo, etc.).
     -   *Opções*:
-        -   `sendMentions` (boolean): Se `true`, realiza a menção no status (limita o array de JIDs a no máximo 5 elementos devido a restrições do WhatsApp).
-        -   `backgroundColor` (string): Cor de fundo para o status de texto (padrão: `'#288d7c85'`).
-        -   `font` (number): Estilo de fonte para o status de texto (padrão: `1`).
--   `delete(msg)`: Exclui uma publicação de status enviada anteriormente.
+        -   `sendMentions` (boolean): Se `true`, realiza a menção nos stories (limita o array de JIDs a no máximo 5 elementos devido a restrições do WhatsApp).
+        -   `backgroundColor` (string): Cor de fundo para os stories de texto (padrão: `'#288d7c85'`).
+        -   `font` (number): Estilo de fonte para os stories de texto (padrão: `1`).
+-   `delete(msg)`: Exclui uma publicação de stories enviada anteriormente.
+
+### 🏷️ Etiquetas (`client.labels`)
+
+Gerenciamento de Etiquetas do WhatsApp Business.
+
+-   `createLabel(name, color)`: Cria uma etiqueta com nome e cor especificados (cores de 0 a 19).
+-   `updateLabel(id, name, color)`: Atualiza o nome e a cor de uma etiqueta existente.
+-   `deleteLabel(id)`: Remove permanentemente uma etiqueta da conta comercial.
+-   `addChatLabel(jid, labelId)`: Associa uma etiqueta a uma conversa.
+-   `removeChatLabel(jid, labelId)`: Remove a etiqueta de uma conversa.
+-   `addMessageLabel(jid, msgId, labelId)`: Associa uma etiqueta a uma mensagem específica.
+-   `removeMessageLabel(jid, msgId, labelId)`: Remove a etiqueta de uma mensagem específica.
+
+### 💼 WhatsApp Business (`client.business`)
+
+Gerenciamento de recursos comerciais (Catálogo, Produtos, Perfil e Capa Comercial).
+
+-   `updateBusinessProfile(profile)`: Atualiza endereço, e-mail, websites, descrição e horários do perfil comercial do bot.
+-   `updateCoverPhoto(path)`: Define ou altera a foto de capa comercial (URL ou Buffer).
+-   `removeCoverPhoto(coverPhotoId)`: Remove a foto de capa comercial atual.
+-   `getCatalog(options)`: Busca a lista de produtos de um contato comercial ou do próprio bot.
+-   `getCollections(jid, count)`: Retorna as coleções de produtos do catálogo de um contato.
+-   `getOrderDetails(orderId, orderToken)`: Obtém os detalhes completos de um pedido a partir do carrinho.
+-   `productCreate(product)`: Adiciona um novo produto ao catálogo comercial.
+-   `productUpdate(productId, product)`: Atualiza os dados de um produto existente.
+-   `productDelete(productIds)`: Exclui permanentemente produtos do catálogo (aceita array de IDs).
 
 ---
 
@@ -345,7 +384,7 @@ A biblioteca disponibiliza classes auxiliares estruturadas para a criação de m
 Gera botões de clique rápido que enviam o texto correspondente de volta ao chat ao serem tocados.
 
 ```javascript
-const { InteractiveMessage, QuickReplyButton } = require('@areumtecnologia/baileys');
+const { InteractiveMessage, QuickReplyButton } = require('@areumtecnologia/unitychat');
 
 const message = new InteractiveMessage()
     .withText('Olá! Escolha uma das opções abaixo:')
@@ -360,7 +399,7 @@ await client.messages.sendMessage(jid, message.build());
 Exibe botões especiais para direcionamento para sites externos, chamadas de voz normais da operadora, cópia de códigos PIX/Cupons e compartilhamento de localização:
 
 ```javascript
-const { InteractiveMessage, UrlButton, CopyCodeButton, CallButton, LocationButton } = require('@areumtecnologia/baileys');
+const { InteractiveMessage, UrlButton, CopyCodeButton, CallButton, LocationButton } = require('@areumtecnologia/unitychat');
 
 const message = new InteractiveMessage()
     .withText('Aqui estão seus links especiais:')
@@ -372,11 +411,44 @@ const message = new InteractiveMessage()
 await client.messages.sendMessage(jid, message.build());
 ```
 
+### 3. Botão de Pagamento PIX e Checkout (Review & Pay)
+
+Gera botões interativos para pagamento PIX estático e faturamento integrado de checkout:
+
+```javascript
+const { InteractiveMessage, PixButton, CheckoutButton } = require('@areumtecnologia/unitychat');
+
+// Exemplo 1: Botão PIX Estático
+const pixMessage = new InteractiveMessage()
+    .withText('Efetue o pagamento via PIX clicando no botão abaixo:')
+    .addButton(new PixButton('Áreum Tecnologia LTDA', 'financeiro@areum.com.br', 'EMAIL'));
+
+await client.messages.sendMessage(jid, pixMessage.build());
+
+// Exemplo 2: Checkout / Faturamento
+const checkoutMessage = new InteractiveMessage()
+    .withText('Fatura gerada com sucesso!')
+    .addButton(new CheckoutButton({
+        currency: 'BRL',
+        totalAmount: { value: '15000', offset: '100' },
+        referenceId: 'REF_PEDIDO_12345',
+        items: [{
+            retailer_id: 'item_01',
+            name: 'Licença Anual WaSockets',
+            amount: { value: '15000', offset: '100' },
+            quantity: '1'
+        }],
+        additionalNote: 'Agradecemos a sua preferência!'
+    }));
+
+await client.messages.sendMessage(jid, checkoutMessage.build());
+```
+
 ### 3. Listas Interativas (Menus de Seleção Única)
 Permite enviar uma lista completa dividida por seções para seleções únicas:
 
 ```javascript
-const { InteractiveMessage, ListButton, ListSection, ListRow } = require('@areumtecnologia/baileys');
+const { InteractiveMessage, ListButton, ListSection, ListRow } = require('@areumtecnologia/unitychat');
 
 const listMenu = new InteractiveMessage()
     .withText('Selecione o produto de interesse:')

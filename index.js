@@ -1,4 +1,4 @@
-// Biblioteca chamada @areumtecnologia/baileys
+// Biblioteca chamada @areumtecnologia/unitychat
 
 const {
     Browsers,
@@ -11,7 +11,9 @@ const {
     useMultiFileAuthState,
     fetchLatestBaileysVersion,
     getOldestMessageInChat,
-    fetchMessageHistory
+    fetchMessageHistory,
+    getAggregateVotesInPollMessage,
+    getAggregateResponsesInEventMessage
 } = require('./handlers/baileys');
 const { Boom } = require('@hapi/boom');
 const EventEmitter = require('events');
@@ -28,10 +30,12 @@ const CallHandler = require('./handlers/calls');
 const NewsletterHandler = require('./handlers/newsletters');
 const { UserHandler, PresenceStatus } = require('./handlers/users');
 const ContactHandler = require('./handlers/contacts');
-const StatusHandler = require('./handlers/status');
+const StoriesHandler = require('./handlers/stories');
+const LabelsHandler = require('./handlers/labels');
+const BusinessHandler = require('./handlers/business');
 
 const { MessageNormalizer, MessageStore } = require('./utils');
-const { InteractiveMessage, CallButton, CopyCodeButton, ListButton, ListRow, ListSection, QuickReplyButton, UrlButton, LocationButton } = require('./types/interactive-messages');
+const { InteractiveMessage, CallButton, CopyCodeButton, ListButton, ListRow, ListSection, QuickReplyButton, UrlButton, LocationButton, PixButton, CheckoutButton } = require('./types/interactive-messages');
 const NodeCache = require("node-cache");
 const groupCache = new NodeCache({ stdTTL: 5 * 60, useClones: false });
 
@@ -41,23 +45,23 @@ const groupCache = new NodeCache({ stdTTL: 5 * 60, useClones: false });
  * 
  * @extends {EventEmitter}
  * 
- * @fires Client#status
- * @fires Client#error
- * @fires Client#message_received
- * @fires Client#message_sent
- * @fires Client#message_update
- * @fires Client#message_delete
- * @fires Client#message_reaction
- * @fires Client#incoming_call
- * @fires Client#GROUPS_UPDATE
- * @fires Client#group_participants_update
- * @fires Client#presence_update
- * @fires Client#chat_update
- * @fires Client#chat_delete
- * @fires Client#contact_update
- * @fires Client#blocklist_update
+ * @fires UnityChat#status
+ * @fires UnityChat#error
+ * @fires UnityChat#message_received
+ * @fires UnityChat#message_sent
+ * @fires UnityChat#message_update
+ * @fires UnityChat#message_delete
+ * @fires UnityChat#message_reaction
+ * @fires UnityChat#incoming_call
+ * @fires UnityChat#GROUPS_UPDATE
+ * @fires UnityChat#group_participants_update
+ * @fires UnityChat#presence_update
+ * @fires UnityChat#chat_update
+ * @fires UnityChat#chat_delete
+ * @fires UnityChat#contact_update
+ * @fires UnityChat#blocklist_update
  */
-class Client extends EventEmitter {
+class UnityChat extends EventEmitter {
     /**
      * Cria uma instância do Cliente.
      * @param {object} [options={}] - Opções de configuração para o cliente.
@@ -66,7 +70,7 @@ class Client extends EventEmitter {
     constructor(options = {}) {
         super();
         this.sock = null;
-        this.dataPath = options.dataPath || ".baileys/sessions";
+        this.dataPath = options.dataPath || "data/sessions";
         this.sessionName = options.sessionName;
         this.sessionPath = [this.dataPath, this.sessionName].join('/');
         this.store = options.store ? options.store : new MessageStore(this.sessionPath);
@@ -77,7 +81,7 @@ class Client extends EventEmitter {
         this.loggerLevel = options.loggerLevel || "error";
         this.logger = pino({ level: this.loggerLevel });
         this.restartOnClose = options.restartOnClose || false;
-        this.status = ClientEvent.DISCONNECTED;
+        this.status = Events.DISCONNECTED;
         this.markOnlineOnConnect = options.markOnlineOnConnect || false;
         this.environment = options.environment || ['Mac OS', 'Chrome', '144.0.7559.110'];
         this.printQRInTerminal = options.printQRInTerminal || false;
@@ -94,7 +98,9 @@ class Client extends EventEmitter {
         this.newsletters = new NewsletterHandler(this);
         this.contacts = new ContactHandler(this);
         this.messages = new MessageHandler(this);
-        this.status = new StatusHandler(this);
+        this.stories = new StoriesHandler(this);
+        this.labels = new LabelsHandler(this);
+        this.business = new BusinessHandler(this);
     }
 
     /**
@@ -103,7 +109,7 @@ class Client extends EventEmitter {
      * @returns {Promise<void>}
      */
     async connect() {
-        this.status = ClientEvent.INIT;
+        this.status = Events.INIT;
         const { state, saveCreds } = await useMultiFileAuthState(this.sessionPath);
         const { version } = await fetchLatestBaileysVersion();
         this.waVersion = this.waVersion || version
@@ -154,9 +160,9 @@ class Client extends EventEmitter {
                 const base64 = await QRCode.toDataURL(qr);
                 this.qrCodeAttempts = (this.qrCodeAttempts || 0) + 1;
                 this.qrCode = { base64, qr, attempts: this.qrCodeAttempts };
-                this.status = ClientEvent.PAIRING_CODE;
-                this.emit(ClientEvent.PAIRING_CODE, this.qrCode);
-                this.emit(ClientEvent.STATUS_CHANGE, this.status);
+                this.status = Events.PAIRING_CODE;
+                this.emit(Events.PAIRING_CODE, this.qrCode);
+                this.emit(Events.STATUS_CHANGE, this.status);
                 this.printQRInTerminal ? qrcodeTerminal.generate(qr, { small: true }) : null;
                 return;
             }
@@ -164,28 +170,28 @@ class Client extends EventEmitter {
             // intercepta a configuração de pairing e reinicio de conexao apos login bem sucedido...
             if (isNewLogin && qr == undefined) {
                 this.qrCode = null;
-                this.status = ClientEvent.PAIRING_SUCCESS;
-                this.emit(ClientEvent.PAIRING_SUCCESS, update);
-                this.emit(ClientEvent.STATUS_CHANGE, this.status);
+                this.status = Events.PAIRING_SUCCESS;
+                this.emit(Events.PAIRING_SUCCESS, update);
+                this.emit(Events.STATUS_CHANGE, this.status);
                 return;
             }
 
             // Dentro de 'connection.update'
             switch (connection) {
                 case 'connecting':
-                    this.status = ClientEvent.CONNECTING;
-                    this.emit(ClientEvent.CONNECTING, update);
-                    this.emit(ClientEvent.STATUS_CHANGE, this.status);
+                    this.status = Events.CONNECTING;
+                    this.emit(Events.CONNECTING, update);
+                    this.emit(Events.STATUS_CHANGE, this.status);
                     break;
 
                 case 'open':
                     this.connected = true;
-                    this.status = ClientEvent.CONNECTED;
+                    this.status = Events.CONNECTED;
                     this.manualDisconnect = false;
                     this.qrCode = null;
                     this.user = await this.itsMe();
-                    this.emit(ClientEvent.CONNECTED, this.user);
-                    this.emit(ClientEvent.STATUS_CHANGE, this.status);
+                    this.emit(Events.CONNECTED, this.user);
+                    this.emit(Events.STATUS_CHANGE, this.status);
                     this.presenceSetInterval = setInterval(() => {
                         if (this.sock?.sendPresenceUpdate) {
                             this.sock.sendPresenceUpdate('available').catch(() => { });
@@ -205,6 +211,7 @@ class Client extends EventEmitter {
 
                     const boomError = new Boom(lastDisconnect?.error);
                     const statusCode = boomError?.output?.statusCode;
+                    const statusError = boomError?.output?.error;
                     const reasonType =
                         boomError?.data?.content?.[0]?.attrs?.type ||
                         boomError?.data?.attrs?.type ||
@@ -215,57 +222,54 @@ class Client extends EventEmitter {
 
                     switch (statusCode) {
 
-                        /** 🔄 WhatsApp pediu restart explícito (515)*/
-                        case DisconnectReason.restartRequired:
-                            return this.connect();
-
-                        /** 🔐 Sessão inválida / corrompida */
-                        case DisconnectReason.badSession:
-                            statusType = DisconnectReasons.BAD_SESSION;
-                            shouldReconnect = false;
-                            try {
-                                await fs.rm(this.sessionPath, { recursive: true, force: true });
-                            } catch { }
-                            break;
-
-                        /** 🚪 Logout explícito (401)*/
+                        /** Logout explícito (401)*/
                         case DisconnectReason.loggedOut:
                             statusType = DisconnectReasons.LOGGED_OUT;
-                            shouldReconnect = false;
+                            shouldReconnect = this.restartOnClose;
                             try {
                                 await fs.rm(this.sessionPath, { recursive: true, force: true });
-                            } catch { }
+                            } catch {
+                                // Erro se nao existir
+                            }
                             break;
 
-                        /** 🔁 Outra instância assumiu a sessão */
-                        case DisconnectReason.connectionReplaced:
-                            statusType = DisconnectReasons.CONNECTION_REPLACED;
-                            shouldReconnect = false;
+                        // 403: Banido ou proibido
+                        case DisconnectReason.forbidden:
+                            statusType = DisconnectReasons.FORBIDDEN;
+                            shouldReconnect = false; //nao pode reconectar, so recriar sessao do 0
+                            try {
+                                await fs.rm(this.sessionPath, { recursive: true, force: true });
+                            } catch {
+                                // Erro se nao existir
+                            }
                             break;
-
-
-                        /** 🧩 Incompatibilidade Multi-Device (418)*/
-                        case DisconnectReason.multideviceMismatch:
-                            statusType = DisconnectReasons.MULTIDEVICE_MISMATCH;
-                            shouldReconnect = false;
-                            break;
-
+                        // 405: Nao autorizado
                         case 405:
                             statusType = DisconnectReasons.UNAUTHORIZED;
                             shouldReconnect = false;
                             try {
                                 await fs.rm(this.sessionPath, { recursive: true, force: true });
                             } catch (error) {
-                                this.logger.error(`Erro ao remover sessão: ${error}`);
+                                // Erro se nao existir
                             }
                             break;
 
+                        /** Outra instância assumiu a sessão */
+                        case DisconnectReason.connectionReplaced:
+                            statusType = DisconnectReasons.CONNECTION_REPLACED;
+                            shouldReconnect = false;
+                            break;
+
+                        /** 🧩 Incompatibilidade Multi-Device (418)*/
+                        case DisconnectReason.multideviceMismatch:
+                            statusType = DisconnectReasons.MULTIDEVICE_MISMATCH;
+                            shouldReconnect = false;
+                            break;
                         /** ⏱ Timeout (408) - Exemplo: Leitura de QrCode expirada*/
                         case DisconnectReason.timedOut:
                             statusType = DisconnectReasons.TIMEOUT;
-                            shouldReconnect = this.status === ClientEvent.PAIRING_CODE ? false : true;
+                            shouldReconnect = this.status === Events.PAIRING_CODE ? false : true;
                             break;
-
                         /** 🔌 Conexão perdida (401) */
                         case DisconnectReason.connectionLost:
                         case DisconnectReason.connectionClosed:
@@ -273,11 +277,22 @@ class Client extends EventEmitter {
                             shouldReconnect = true;
                             break;
 
+                        /** Sessão inválida / corrompida (500) */
+                        case DisconnectReason.badSession:
+                            statusType = DisconnectReasons.BAD_SESSION;
+                            shouldReconnect = false;
+                            try {
+                                await fs.rm(this.sessionPath, { recursive: true, force: true });
+                            } catch { }
+                            break;
                         /** 🌐 Serviço indisponível (503) */
                         case DisconnectReason.unavailableService:
                             statusType = DisconnectReasons.SERVICE_UNAVAILABLE;
                             shouldReconnect = true;
                             break;
+                        /** WhatsApp pediu restart explícito (515)*/
+                        case DisconnectReason.restartRequired:
+                            return this.connect();
 
                         /** ❓ Qualquer outro caso */
                         default:
@@ -293,15 +308,15 @@ class Client extends EventEmitter {
                         details: lastDisconnect?.error,
                     };
 
-                    this.status = ClientEvent.DISCONNECTED;
-                    this.emit(ClientEvent.DISCONNECTED, disconnectReason);
-                    this.emit(ClientEvent.STATUS_CHANGE, this.status, disconnectReason);
+                    this.status = Events.DISCONNECTED;
+                    this.emit(Events.DISCONNECTED, disconnectReason);
+                    this.emit(Events.STATUS_CHANGE, this.status, disconnectReason);
 
                     if (shouldReconnect && this.restartOnClose && !this.manualDisconnect) {
                         try {
                             await this.connect();
                         } catch (err) {
-                            this.emit(ClientEvent.ERROR, err);
+                            this.emit(Events.ERROR, err);
                         }
                     }
 
@@ -317,10 +332,10 @@ class Client extends EventEmitter {
         // =================================================================================================
 
         this.sock.ev.on('call', ([call]) => {
-            this.emit(ClientEvent.CALL, this.calls.normalizeCall(call));
+            this.emit(Events.CALL, this.calls.normalizeCall(call));
         });
         this.sock.ev.on('groups.upsert', async (groups) => {
-            this.emit(ClientEvent.GROUPS_UPSERT, groups);
+            this.emit(Events.GROUPS_UPSERT, groups);
             groups.forEach((group) => {
                 this.groups.store.set(group.id, group);
             });
@@ -339,11 +354,11 @@ class Client extends EventEmitter {
                 groupCache.set(g.id, contact.metadata);
                 gp.push(contact.metadata);
             }
-            this.emit(ClientEvent.GROUPS_UPDATE, gp);
+            this.emit(Events.GROUPS_UPDATE, gp);
         });
 
         this.sock.ev.on('group-participants.update', async (event) => {
-            this.emit(ClientEvent.GROUP_PARTICIPANTS_UPDATE, event);
+            this.emit(Events.GROUP_PARTICIPANTS_UPDATE, event);
             let contact = await this.contacts.get(event.id);
             if (!contact) {
                 contact = await this.contacts.normalize({ key: { remoteJid: event.id, fromMe: false } });
@@ -354,8 +369,9 @@ class Client extends EventEmitter {
             this.groups.store.set(event.id, contact.metadata);
         });
 
-        this.sock.ev.on('presence.update', (event) => this.emit(ClientEvent.PRESENCE_UPDATE, event));
-        this.sock.ev.on('contacts.upsert', (contacts) => this.emit(ClientEvent.CONTACTS_UPSERT, contacts));
+        this.sock.ev.on('presence.update', (event) => this.emit(Events.PRESENCE_UPDATE, event));
+        this.sock.ev.on('group.member-tag.update', (update) => this.emit(Events.GROUP_MEMBER_TAG_UPDATE, update));
+        this.sock.ev.on('contacts.upsert', (contacts) => this.emit(Events.CONTACTS_UPSERT, contacts));
         this.sock.ev.on('contacts.update', async (event) => {
             const cxs = [];
             // event é um array de objetos {id, imgUrl, name, etc}. 
@@ -382,12 +398,12 @@ class Client extends EventEmitter {
             }
             // So emite o evento se houver contatos atualizados
             if (cxs.length > 0) {
-                this.emit(ClientEvent.CONTACTS_UPDATE, cxs);
+                this.emit(Events.CONTACTS_UPDATE, cxs);
             }
         });
-        this.sock.ev.on('blocklist.update', (event) => this.emit(ClientEvent.BLOCKLIST_UPDATE, event));
-        this.sock.ev.on('chats.update', (event) => this.emit(ClientEvent.CHAT_UPDATE, event));
-        this.sock.ev.on('chats.delete', (event) => this.emit(ClientEvent.CHAT_DELETE, event));
+        this.sock.ev.on('blocklist.update', (event) => this.emit(Events.BLOCKLIST_UPDATE, event));
+        this.sock.ev.on('chats.update', (event) => this.emit(Events.CHAT_UPDATE, event));
+        this.sock.ev.on('chats.delete', (event) => this.emit(Events.CHAT_DELETE, event));
 
         this.sock.ev.on('messaging-history.set', async ({ chats, contacts, messages, isLatest, syncType }) => {
             this.logger.info({ chats: chats.length, contacts: contacts.length, syncType }, 'Sincronização de histórico recebida');
@@ -419,29 +435,29 @@ class Client extends EventEmitter {
                         }
                     }
                 }
-                this.emit(ClientEvent.MESSAGES_HISTORY_SYNC_DONE, { chats, contacts, messages, isLatest, syncType });
+                this.emit(Events.MESSAGES_HISTORY_SYNC_DONE, { chats, contacts, messages, isLatest, syncType });
 
             } catch (error) {
-                this.emit(ClientEvent.ERROR, error);
+                this.emit(Events.ERROR, error);
             }
         });
-        this.sock.ev.on('messages.update', (event) => this.emit(ClientEvent.MESSAGE_UPDATE, event));
-        this.sock.ev.on('messages.delete', (event) => this.emit(ClientEvent.MESSAGE_DELETE, event));
-        this.sock.ev.on('messages.reaction', (event) => this.emit(ClientEvent.MESSAGE_REACTION, event));
+        this.sock.ev.on('messages.update', (event) => this.emit(Events.MESSAGE_UPDATE, event));
+        this.sock.ev.on('messages.delete', (event) => this.emit(Events.MESSAGE_DELETE, event));
+        this.sock.ev.on('messages.reaction', (event) => this.emit(Events.MESSAGE_REACTION, event));
         this.sock.ev.on('messages.upsert', async (event) => {
             try {
                 const { messages, type } = event;
                 const msg = messages[0];
 
                 if (!msg.message || msg.message.protocolMessage) {
-                    this.emit(ClientEvent.NOTIFICATION, msg);
+                    this.emit(Events.NOTIFICATION, msg);
                 } else {
                     let contact = await this.contacts.get(msg.key.remoteJid);
                     if (!contact) {
                         contact = await this.contacts.normalize(msg); // msg ja contem tudo que precisa
                     }
                     if (msg.broadcast || msg.key.remoteJid == 'status@broadcast') {
-                        this.emit(ClientEvent.BROADCAST_MESSAGE, msg);
+                        this.emit(Events.BROADCAST_MESSAGE, msg);
                     } else {
                         const nmsg = await MessageNormalizer.normalize(contact, msg, this);
                         if (nmsg && this.store) {
@@ -454,30 +470,30 @@ class Client extends EventEmitter {
                         // Mensagens de conversacao
                         switch (type) {
                             case 'append':
-                                this.emit(ClientEvent.MESSAGE_SENT, nmsg);
+                                this.emit(Events.MESSAGE_SENT, nmsg);
                                 break;
 
                             case 'notify':
                                 if (msg.key.fromMe) {
-                                    this.emit(ClientEvent.MESSAGE_SENT, nmsg);
+                                    this.emit(Events.MESSAGE_SENT, nmsg);
                                 } else {
                                     // So adiciona contato no cache se for recebido
                                     if (contact && contact.id && contact.name && contact.id !== this.user?.id) {
                                         this.contacts.set(contact.id, contact);
                                     }
-                                    this.emit(ClientEvent.MESSAGE_RECEIVED, nmsg);
+                                    this.emit(Events.MESSAGE_RECEIVED, nmsg);
                                 }
 
                                 break;
                             default:
-                                this.emit(ClientEvent.NOTIFICATION, nmsg);
+                                this.emit(Events.NOTIFICATION, nmsg);
                                 break;
                         }
 
                     }
                 }
             } catch (error) {
-                this.emit(ClientEvent.ERROR, { error, event });
+                this.emit(Events.ERROR, { error, event });
             }
 
         });
@@ -505,7 +521,7 @@ class Client extends EventEmitter {
             this.manualDisconnect = true;
             return this.sock?.end();
         } catch (error) {
-            this.emit(ClientEvent.ERROR, error);
+            this.emit(Events.ERROR, error);
         }
     }
 
@@ -517,7 +533,7 @@ class Client extends EventEmitter {
             }
             // Aqui você pode adicionar a limpeza local da sessão
         } catch (err) {
-            this.emit(ClientEvent.ERROR, err);
+            this.emit(Events.ERROR, err);
         }
     }
 
@@ -527,7 +543,7 @@ class Client extends EventEmitter {
      * @throws {Error} Se o cliente não estiver conectado.
      */
     _validateConnection() {
-        if (!this.sock || this.status !== ClientEvent.CONNECTED) {
+        if (!this.sock || this.status !== Events.CONNECTED) {
             throw new Error('Cliente não está conectado.', { cause: this.status });
         }
     }
@@ -535,6 +551,16 @@ class Client extends EventEmitter {
     // Metodos usados pelos handlers
     async decryptPollVote(vote, voteParams) {
         return await decryptPollVote(vote, voteParams);
+    }
+
+    async getAggregateVotesInPollMessage(pollParams) {
+        const meId = pollParams.meId || this.sock?.user?.id;
+        return getAggregateVotesInPollMessage(pollParams, meId);
+    }
+
+    async getAggregateResponsesInEventMessage(eventParams) {
+        const meLid = eventParams.meLid || this.sock?.user?.lid || this.sock?.user?.id;
+        return getAggregateResponsesInEventMessage(eventParams, meLid);
     }
 
     // Metodos usados pelos handlers
@@ -569,9 +595,9 @@ class Client extends EventEmitter {
 }
 
 /**
- * Enumeração estática dos eventos emitidos pelo Client.
+ * Enumeração estática dos eventos emitidos pelo UnityChat.
  */
-class ClientEvent {
+class Events {
     static INIT = 'init';
     static CONNECTING = 'connecting';
     static STATUS_CHANGE = 'status_change';
@@ -585,6 +611,7 @@ class ClientEvent {
     static GROUPS_UPDATE = 'GROUPS_UPDATE';
     static GROUP_PARTICIPANTS_UPDATE = 'group_participants_update';
     static GROUPS_UPSERT = 'GROUPS_UPSERT';
+    static GROUP_MEMBER_TAG_UPDATE = 'group_member_tag_update';
     static PRESENCE_UPDATE = 'presence_update';
     static CHAT_UPDATE = 'chat_update';
     static CHAT_DELETE = 'chat_delete';
@@ -633,9 +660,9 @@ class DisconnectReasons {
 }
 
 module.exports = {
-    Client,
+    UnityChat,
     PresenceStatus,
-    ClientEvent,
+    Events,
     DisconnectReasons,
     InteractiveMessage,
     QuickReplyButton,
@@ -645,5 +672,7 @@ module.exports = {
     ListButton,
     ListSection,
     ListRow,
-    LocationButton
+    LocationButton,
+    PixButton,
+    CheckoutButton
 }

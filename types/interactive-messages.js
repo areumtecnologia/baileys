@@ -305,6 +305,62 @@ class InteractiveMessage {
     }
 }
 
+class PixButton extends InteractiveButtonBase {
+    /**
+     * @param {string} merchantName - Nome do recebedor.
+     * @param {string} key - Chave PIX (E-mail, CPF/CNPJ, Telefone ou EVP).
+     * @param {'EMAIL'|'PHONE'|'CPF'|'EVP'} [keyType='EMAIL'] - Tipo da chave PIX.
+     */
+    constructor(merchantName, key, keyType = 'EMAIL') {
+        super('payment_info');
+        this.merchantName = merchantName;
+        this.key = key;
+        this.keyType = keyType;
+    }
+
+    _buildParams() {
+        return {
+            payment_settings: [{
+                type: 'pix_static_code',
+                pix_static_code: {
+                    merchant_name: this.merchantName,
+                    key: this.key,
+                    key_type: this.keyType
+                }
+            }]
+        };
+    }
+}
+
+class CheckoutButton extends InteractiveButtonBase {
+    /**
+     * @param {object} data - Dados de faturamento do pedido.
+     */
+    constructor(data) {
+        super('review_and_pay');
+        this.data = data;
+    }
+
+    _buildParams() {
+        return {
+            currency: this.data.currency || 'BRL',
+            payment_type: this.data.paymentType || 'physical-goods',
+            total_amount: this.data.totalAmount,
+            reference_id: this.data.referenceId,
+            payment_method: this.data.paymentMethod || 'confirm',
+            payment_status: this.data.paymentStatus || 'captured',
+            payment_timestamp: this.data.paymentTimestamp || Math.floor(Date.now() / 1000),
+            order: {
+                status: this.data.orderStatus || 'completed',
+                order_type: this.data.orderType || 'PAYMENT_REQUEST',
+                subtotal: this.data.subtotal || this.data.totalAmount,
+                items: this.data.items || []
+            },
+            additional_note: this.data.additionalNote || ''
+        };
+    }
+}
+
 module.exports = {
     InteractiveMessage,
     QuickReplyButton,
@@ -314,5 +370,7 @@ module.exports = {
     LocationButton,
     ListButton,
     ListSection,
-    ListRow
+    ListRow,
+    PixButton,
+    CheckoutButton
 };

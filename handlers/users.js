@@ -114,6 +114,51 @@ class UserHandler {
         return await this.client.sock.sendPresenceUpdate(presenceStatus, jid);
     }
 
+    /**
+     * Atualiza a configuração de privacidade do "Visto por Último".
+     * @param {'all' | 'contacts' | 'contact_blacklist' | 'none'} value - O nível de privacidade.
+     * @returns {Promise<object>} O resultado da operação.
+     */
+    async updateLastSeenPrivacy(value) {
+        this.client._validateConnection();
+        try {
+            return await this.client.sock.updateLastSeenPrivacy(value);
+        } catch (error) {
+            this.client.logger.error({ value, err: error.message }, 'Erro ao atualizar privacidade do Visto por Último');
+            throw new Error(`Erro ao atualizar privacidade do Visto por Último: ${error.message}`, { cause: error });
+        }
+    }
+
+    /**
+     * Atualiza a configuração de privacidade do "Visto Online".
+     * @param {'all' | 'match_last_seen'} value - O nível de privacidade.
+     * @returns {Promise<object>} O resultado da operação.
+     */
+    async updateOnlinePrivacy(value) {
+        this.client._validateConnection();
+        try {
+            return await this.client.sock.updateOnlinePrivacy(value);
+        } catch (error) {
+            this.client.logger.error({ value, err: error.message }, 'Erro ao atualizar privacidade do Visto Online');
+            throw new Error(`Erro ao atualizar privacidade do Visto Online: ${error.message}`, { cause: error });
+        }
+    }
+
+    /**
+     * Atualiza a configuração de privacidade das confirmações de leitura (ticks azuis).
+     * @param {'all' | 'none'} value - O nível de privacidade.
+     * @returns {Promise<object>} O resultado da operação.
+     */
+    async updateReadReceiptsPrivacy(value) {
+        this.client._validateConnection();
+        try {
+            return await this.client.sock.updateReadReceiptsPrivacy(value);
+        } catch (error) {
+            this.client.logger.error({ value, err: error.message }, 'Erro ao atualizar privacidade das confirmações de leitura');
+            throw new Error(`Erro ao atualizar privacidade das confirmações de leitura: ${error.message}`, { cause: error });
+        }
+    }
+
 }
 
 module.exports = { UserHandler, PresenceStatus };

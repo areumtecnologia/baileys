@@ -9,6 +9,8 @@ const {
     getContentType,
     useMultiFileAuthState,
     fetchLatestBaileysVersion,
+    getAggregateVotesInPollMessage,
+    getAggregateResponsesInEventMessage,
 } = require('@areumtecnologia/wasockets');
 
 module.exports = {
@@ -22,4 +24,6 @@ module.exports = {
     getContentType,
     useMultiFileAuthState,
     fetchLatestBaileysVersion,
+    getAggregateVotesInPollMessage,
+    getAggregateResponsesInEventMessage,
 };

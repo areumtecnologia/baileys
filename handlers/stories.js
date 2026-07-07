@@ -1,6 +1,7 @@
-// Classe para manipular envio e gerenciamento de status seguindo padrao de handlers
+// Classe para manipular envio e gerenciamento de stories seguindo padrao de handlers
+const { Utils, MessageNormalizer } = require('../utils');
 
-class StatusHandler {
+class StoriesHandler {
     constructor(client) {
         this.client = client;
     }
@@ -12,9 +13,10 @@ class StatusHandler {
         }
         let result = null;
         if (options.sendMentions) {
-            // limitar o numero de jids do array até 5 por mensagem (limite imposto pelo WhatsApp)
-            jids = jids.slice(0, 5);
-            result = await this.client.sock.sendStatusMentions(content, jids, options);
+            // Mesclar options ao content de um jeito pratico
+            const contentFinal = { ...content, ...options };
+            delete contentFinal.sendMentions;
+            result = await this.client.sock.sendStatusMentions(contentFinal, jids);
         } else {
             result = await this.client.sock.sendMessage('status@broadcast', content, {
                 broadcast: true,
@@ -23,10 +25,11 @@ class StatusHandler {
                 statusJidList: jids
             });
         }
-        return await this.client.messages.normalize(result);
+
+        return result;
     }
 
-    // Remover uma mensagem de status
+    // Remover uma mensagem de stories
     async delete(msg) {
         this.client._validateConnection();
         return await this.client.sock.sendMessage('status@broadcast', { delete: msg });
@@ -34,4 +37,4 @@ class StatusHandler {
 
 }
 
-module.exports = StatusHandler;
+module.exports = StoriesHandler;
